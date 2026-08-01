@@ -10,7 +10,8 @@ import {
   type ClubRef,
   type SquadPlayerRef,
 } from "@/lib/transfermarkt";
-import { fetchWikidataClubStints, type ClubStint } from "@/lib/wikidata";
+import { findWikipediaTitle } from "@/lib/wikidata";
+import { fetchWikipediaSeniorCareer, type InfoboxStint } from "@/lib/wikipedia";
 import { foldDiacritics } from "@/lib/text-match";
 
 /**
@@ -125,17 +126,16 @@ function namesLikelyMatch(a: string, b: string): boolean {
 //     was "the best score" simply because nothing else overlapped at all.
 // Attaching stats to the wrong stop is a confidently wrong answer, not just
 // a missing one, so all three have to pass.
-function attachClubStats(draft: CareerPathDraft[], stints: ClubStint[]): CareerStop[] {
+function attachClubStats(draft: CareerPathDraft[], stints: InfoboxStint[]): CareerStop[] {
   const currentYear = new Date().getFullYear();
   return draft.map(({ club, seasons, startYear, endYear }) => {
     const stopEnd = endYear ?? currentYear;
     const minRequiredOverlap = Math.ceil((stopEnd - startYear + 1) / 2);
-    let best: ClubStint | null = null;
+    let best: InfoboxStint | null = null;
     let bestScore = 0;
     let secondBestScore = 0;
     for (const stint of stints) {
-      if (stint.startYear === null) continue;
-      if (!namesLikelyMatch(club, stint.teamLabel)) continue;
+      if (!namesLikelyMatch(club, stint.club)) continue;
       const stintEnd = stint.endYear ?? currentYear;
       const score = overlapYears(startYear, stopEnd, stint.startYear, stintEnd);
       if (score > bestScore) {
@@ -153,17 +153,23 @@ function attachClubStats(draft: CareerPathDraft[], stints: ClubStint[]): CareerS
   });
 }
 
-const wikidataStintsCache = new Map<string, Promise<ClubStint[]>>();
+const careerStintsCache = new Map<string, Promise<InfoboxStint[]>>();
 
-function cachedWikidataStints(name: string, dob: string): Promise<ClubStint[]> {
+async function lookupCareerStints(name: string, dob: string): Promise<InfoboxStint[]> {
+  const title = await findWikipediaTitle(name, dob);
+  if (!title) return [];
+  return fetchWikipediaSeniorCareer(title);
+}
+
+function cachedCareerStints(name: string, dob: string): Promise<InfoboxStint[]> {
   const key = `${name}:${dob}`;
-  let cached = wikidataStintsCache.get(key);
+  let cached = careerStintsCache.get(key);
   if (!cached) {
-    cached = fetchWikidataClubStints(name, dob).catch((err) => {
-      console.error(`Wikidata lookup failed for "${name}" (${dob}):`, err);
+    cached = lookupCareerStints(name, dob).catch((err) => {
+      console.error(`Wikipedia career-stats lookup failed for "${name}" (${dob}):`, err);
       return [];
     });
-    wikidataStintsCache.set(key, cached);
+    careerStintsCache.set(key, cached);
   }
   return cached;
 }
@@ -182,7 +188,7 @@ async function fetchPlayerDetails(id: string): Promise<Player | null> {
   if (draft.length === 0) return null;
 
   const dob = extractDob(profile.description);
-  const stints = dob ? await cachedWikidataStints(profile.name, dob) : [];
+  const stints = dob ? await cachedCareerStints(profile.name, dob) : [];
   const careerPath = stints.length > 0 ? attachClubStats(draft, stints) : draft;
 
   return {

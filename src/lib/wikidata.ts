@@ -1,7 +1,12 @@
-// Wikidata-backed enrichment: per-club appearances/goals for a Career Path
-// answer, matched by full name + exact date of birth. See
-// docs/transfermarkt-api.md for why (transfermarkt-api's own stats endpoint
-// is broken) and how the matching was validated.
+// Used only to find the right English Wikipedia article for a Career Path
+// answer, matched by full name + exact date of birth — see
+// docs/transfermarkt-api.md for how the matching was validated. The actual
+// club-by-club stats come from parsing that Wikipedia article's infobox
+// (src/lib/wikipedia.ts), not from Wikidata's own structured claims:
+// Wikidata's P54 (member of sports team) data turned out to be incomplete
+// for major stints (e.g. it was missing Messi's entire 16-year, 520-
+// appearance senior Barcelona career, while still having his reserve-team
+// stints) — Wikipedia's infobox had the real number.
 //
 // Wikimedia asks API consumers to identify themselves with a descriptive
 // User-Agent rather than a generic/default one.
@@ -28,48 +33,30 @@ async function searchWikidataCandidates(name: string): Promise<string[]> {
   return (data.search ?? []).map((r) => r.id);
 }
 
-export type ClubStint = {
-  teamLabel: string;
-  startYear: number | null;
-  endYear: number | null;
-  appearances: number;
-  goals: number;
-};
+type SparqlBinding = { article?: { value: string } };
 
-type SparqlBinding = {
-  teamLabel?: { value: string };
-  start?: { value: string };
-  end?: { value: string };
-  apps?: { value: string };
-  goals?: { value: string };
-};
-
-// P54 = member of sports team, P580/P582 = start/end time, P1350/P1351 =
-// matches played / goals scored (qualifiers on the P54 statement). The
-// wdt:P31/wdt:P279* Q476028 filter restricts to association football clubs
-// so national-team caps don't get mixed into club career stats.
-function buildStintsQuery(candidateIds: string[], isoDob: string): string {
+// schema:about / schema:isPartOf is how Wikidata records Wikipedia
+// sitelinks — this asks for whichever DOB-matched candidate has an English
+// Wikipedia article.
+function buildSitelinkQuery(candidateIds: string[], isoDob: string): string {
   const values = candidateIds.map((id) => `wd:${id}`).join(" ");
   return `
-    SELECT ?teamLabel ?start ?end ?apps ?goals WHERE {
+    SELECT ?article WHERE {
       VALUES ?person { ${values} }
       ?person wdt:P569 ?dob .
       FILTER(YEAR(?dob) = ${isoDob.slice(0, 4)} && MONTH(?dob) = ${Number(isoDob.slice(5, 7))} && DAY(?dob) = ${Number(isoDob.slice(8, 10))})
-      ?person p:P54 ?stmt .
-      ?stmt ps:P54 ?team .
-      ?team wdt:P31/wdt:P279* wd:Q476028 .
-      OPTIONAL { ?stmt pq:P580 ?start }
-      OPTIONAL { ?stmt pq:P582 ?end }
-      OPTIONAL { ?stmt pq:P1350 ?apps }
-      OPTIONAL { ?stmt pq:P1351 ?goals }
-      SERVICE wikibase:label { bd:serviceParam wikibase:language "en". }
+      ?article schema:about ?person ;
+               schema:isPartOf <https://en.wikipedia.org/> .
     }
   `;
 }
 
-async function fetchClubStints(candidateIds: string[], isoDob: string): Promise<ClubStint[]> {
-  if (candidateIds.length === 0) return [];
-  const query = buildStintsQuery(candidateIds, isoDob);
+async function fetchWikipediaTitle(
+  candidateIds: string[],
+  isoDob: string
+): Promise<string | null> {
+  if (candidateIds.length === 0) return null;
+  const query = buildSitelinkQuery(candidateIds, isoDob);
   const url = `${WIKIDATA_SPARQL_URL}?query=${encodeURIComponent(query)}&format=json`;
 
   const res = await fetch(url, {
@@ -81,24 +68,19 @@ async function fetchClubStints(candidateIds: string[], isoDob: string): Promise<
     );
   }
   const data = (await res.json()) as { results: { bindings: SparqlBinding[] } };
+  const articleUrl = data.results.bindings[0]?.article?.value;
+  if (!articleUrl) return null;
 
-  return data.results.bindings.map((b) => ({
-    teamLabel: b.teamLabel?.value ?? "Unknown",
-    startYear: b.start ? new Date(b.start.value).getUTCFullYear() : null,
-    endYear: b.end ? new Date(b.end.value).getUTCFullYear() : null,
-    appearances: b.apps ? Number(b.apps.value) : 0,
-    goals: b.goals ? Number(b.goals.value) : 0,
-  }));
+  // e.g. "https://en.wikipedia.org/wiki/Lionel_Messi" -> "Lionel Messi"
+  const encodedTitle = articleUrl.split("/wiki/")[1];
+  return encodedTitle ? decodeURIComponent(encodedTitle).replace(/_/g, " ") : null;
 }
 
 // Matches by full name + exact (day-precision) date of birth only — no
 // looser fallback. A wrong match would silently attach one real person's
 // stats to a different person's career stop, which is worse than showing
 // no stats at all in a game about factual accuracy.
-export async function fetchWikidataClubStints(
-  name: string,
-  isoDob: string
-): Promise<ClubStint[]> {
+export async function findWikipediaTitle(name: string, isoDob: string): Promise<string | null> {
   const candidateIds = await searchWikidataCandidates(name);
-  return fetchClubStints(candidateIds, isoDob);
+  return fetchWikipediaTitle(candidateIds, isoDob);
 }

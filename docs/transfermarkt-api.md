@@ -59,7 +59,7 @@ Useful endpoints for Career Path:
   apparently JS-rendered now and the static HTML this scraper fetches has no
   `<table>` at all. Not fixable without patching the scraper's XPath/parsing
   logic (out of scope here). Per-club appearances/goals now come from
-  Wikidata instead — see below.
+  Wikipedia instead — see below.
 
 Note: Transfermarkt sits behind Cloudflare and occasionally returns a
 transient `502`/`503` to the scraper. A retry a few seconds later usually
@@ -130,22 +130,34 @@ Retired players' final `careerPath` stop is literally the club name
 is left in deliberately, so it reads like one more entry in their career
 list rather than being filtered out.
 
-## Per-club appearances/goals (Wikidata)
+## Per-club appearances/goals (Wikipedia, via Wikidata identity matching)
 
 Since transfermarkt-api's own `/players/{id}/stats` is broken (see above),
-appearances/goals per `careerPath` stop come from Wikidata instead
-(`src/lib/wikidata.ts`), matched by full name + exact date of birth:
+appearances/goals per `careerPath` stop are parsed straight out of the
+answer's English Wikipedia infobox (`src/lib/wikipedia.ts`). Wikidata's own
+structured claims were tried first and abandoned as a stats *source* — its
+`P54` (member of sports team) data turned out to be incomplete for major
+stints: querying it for Messi returned his reserve-team spells but not his
+main 16-year, 520-appearance senior Barcelona career at all. Wikipedia's
+infobox had the real number. Wikidata is still used, just for a narrower
+job — identity matching:
 
-1. `wbsearchentities` (Wikidata's search API) for the player's name → up to
-   10 candidate Wikidata items.
-2. One SPARQL query (`https://query.wikidata.org/sparql`) against those
-   candidates, filtered to whichever one has an exact day-precision date of
-   birth match (parsed from transfermarkt's `profile.description` text,
-   since — like `/stats` — the structured `dateOfBirth` field on the
-   profile endpoint is also broken/missing). Returns that person's
-   `P54` (member of sports team) claims, restricted to association football
-   clubs (excludes national-team caps), with `P580`/`P582` (start/end) and
-   `P1350`/`P1351` (appearances/goals) qualifiers.
+1. `src/lib/wikidata.ts`: `wbsearchentities` (Wikidata's search API) for
+   the player's name → up to 10 candidate items, then one SPARQL query
+   (`https://query.wikidata.org/sparql`) filtered to whichever candidate
+   has an exact day-precision date-of-birth match (parsed from
+   transfermarkt's `profile.description` text, since — like `/stats` — the
+   structured `dateOfBirth` field on the profile endpoint is also
+   broken/missing), returning that person's English Wikipedia sitelink
+   (`schema:about`/`schema:isPartOf`) as an article title.
+2. `src/lib/wikipedia.ts`: fetches that article's raw wikitext
+   (`action=query&prop=revisions`) and regex-parses the
+   `{{Infobox football biography}}` template's numbered senior-career
+   fields — `years1`/`clubs1`/`caps1`/`goals1`, `years2`/... in career
+   order. Deliberately excludes `youthyearsN`/`youthclubsN` (no stats) and
+   `nationalyearsN`/`nationalteamN`/`nationalcapsN`/`nationalgoalsN`
+   (international caps, not club career) — the parameter-name prefixes
+   make this a simple anchored-regex distinction, not a semantic one.
 
 Matching by name + exact DOB was validated against real edge cases before
 building this: two different footballers both named "David Silva," both
@@ -155,7 +167,7 @@ tagged as such in the search result. Wikidata's own "Transfermarkt player
 ID" property (P2276) was *not* used as the join key — tested against
 Fernando Llorente and it pointed to a stale/invalid Transfermarkt ID.
 
-`data-source.ts` then attaches each Wikidata stint to whichever
+`data-source.ts` then attaches each infobox stint to whichever
 `careerPath` stop it overlaps most, in years — but only if the club names
 are at least plausibly the same (token-prefix match, so "Barça"/"Barcelona"
 or "Man"/"Manchester" still connect) **and** the overlap covers at least
@@ -189,14 +201,20 @@ Known limitations:
   trophy-winning squad, can still slip in with a short or unremarkable
   career path.
 - Appearances/goals are best-effort, not guaranteed per stop:
-  - No match at all if the player isn't on Wikidata, or their DOB there
-    only has year/month precision (exact-day match required).
+  - No match at all if the player isn't on Wikidata (no article, or no
+    English Wikipedia sitelink), or their Wikidata DOB only has year/month
+    precision (exact-day match required) — falls back to no stats, not the
+    mock dataset's absence of the feature.
   - Club-name matching is prefix-based, not alias-aware — pure acronyms
-    like transfermarkt's "PSG" vs Wikidata's "Paris Saint-Germain FC" don't
-    share a text prefix, so that stint is silently skipped rather than
-    matched.
+    like transfermarkt's "PSG" vs the infobox's spelled-out "Paris
+    Saint-Germain" don't share a text prefix, so that stint is silently
+    skipped rather than matched.
   - Adjacent same-club youth/reserve tiers (e.g. a club's U16 vs U19 vs "C"
     team) can still occasionally get attributed to the wrong neighbouring
-    tier when Wikidata's own qualifier dates for those transitions are only
-    year-precision on both sides — the numbers end up small and plausible
+    tier when the infobox's own year ranges for those transitions overlap
+    by a single boundary year — the numbers end up small and plausible
     either way, just not necessarily attached to the exact right tier.
+  - Relies on the `{{Infobox football biography}}` template's numbered
+    `yearsN`/`clubsN`/`capsN`/`goalsN` convention, which is near-universal
+    on English Wikipedia footballer articles but not something every
+    article is guaranteed to use.
