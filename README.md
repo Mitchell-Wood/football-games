@@ -43,12 +43,13 @@ docs/
 
 ## Data source
 
-Real player data is meant to come from a self-hosted instance of
+By default the games use a small hardcoded dataset. Real player data can
+come from a self-hosted instance of
 [transfermarkt-api](https://github.com/felipeall/transfermarkt-api) (a
 FastAPI service that scrapes Transfermarkt — it's not a hosted API, you run
 it yourself, e.g. via Docker). See
 [`docs/transfermarkt-api.md`](docs/transfermarkt-api.md) for setup and how
-it plugs into `src/lib/data-source.ts`.
+it plugs into `src/lib/data-source.ts` via `DATA_SOURCE=transfermarkt`.
 
 ## Deploy
 

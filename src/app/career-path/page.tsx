@@ -1,5 +1,5 @@
 import CareerPathGame from "@/components/CareerPathGame";
-import { fetchPlayers } from "@/lib/data-source";
+import { fetchRandomPlayer } from "@/lib/data-source";
 
 export const metadata = {
   title: "Career Path | Football Games",
@@ -10,11 +10,6 @@ export const metadata = {
 export const dynamic = "force-dynamic";
 
 export default async function CareerPathPage() {
-  const players = await fetchPlayers();
-  // This is a Server Component: it runs once per request (see `dynamic =
-  // "force-dynamic"` above), not re-rendered/memoized by the React
-  // Compiler, so a fresh random pick per request is intentional here.
-  // eslint-disable-next-line react-hooks/purity
-  const answer = players[Math.floor(Math.random() * players.length)];
+  const answer = await fetchRandomPlayer();
   return <CareerPathGame key={answer.id} answer={answer} />;
 }

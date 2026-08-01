@@ -36,6 +36,12 @@ yarn-error.log*
 # vercel
 .vercel
 
+# local transfermarkt-api clone (see docs/transfermarkt-api.md)
+/.transfermarkt-api
+
+# local Claude Code permissions (machine-specific)
+.claude/settings.local.json
+
 # typescript
 *.tsbuildinfo
 next-env.d.ts
