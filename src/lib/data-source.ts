@@ -159,7 +159,10 @@ function cachedWikidataStints(name: string, dob: string): Promise<ClubStint[]> {
   const key = `${name}:${dob}`;
   let cached = wikidataStintsCache.get(key);
   if (!cached) {
-    cached = fetchWikidataClubStints(name, dob).catch(() => []);
+    cached = fetchWikidataClubStints(name, dob).catch((err) => {
+      console.error(`Wikidata lookup failed for "${name}" (${dob}):`, err);
+      return [];
+    });
     wikidataStintsCache.set(key, cached);
   }
   return cached;

@@ -21,7 +21,9 @@ async function searchWikidataCandidates(name: string): Promise<string[]> {
   url.searchParams.set("format", "json");
 
   const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
-  if (!res.ok) throw new Error(`Wikidata search failed: ${res.status}`);
+  if (!res.ok) {
+    throw new Error(`Wikidata search failed: ${res.status} ${(await res.text()).slice(0, 300)}`);
+  }
   const data = (await res.json()) as { search?: { id: string }[] };
   return (data.search ?? []).map((r) => r.id);
 }
@@ -73,7 +75,11 @@ async function fetchClubStints(candidateIds: string[], isoDob: string): Promise<
   const res = await fetch(url, {
     headers: { Accept: "application/sparql-results+json", "User-Agent": USER_AGENT },
   });
-  if (!res.ok) throw new Error(`Wikidata SPARQL query failed: ${res.status}`);
+  if (!res.ok) {
+    throw new Error(
+      `Wikidata SPARQL query failed: ${res.status} ${(await res.text()).slice(0, 300)}`
+    );
+  }
   const data = (await res.json()) as { results: { bindings: SparqlBinding[] } };
 
   return data.results.bindings.map((b) => ({
