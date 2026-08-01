@@ -13,3 +13,7 @@ services:
         value: 22.11.0
       - key: NODE_ENV
         value: production
+      - key: DATA_SOURCE
+        value: transfermarkt
+      - key: TRANSFERMARKT_API_URL
+        value: https://transfermarkt-api-967r.onrender.com
