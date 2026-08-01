@@ -1,5 +1,5 @@
 import CareerPathGame from "@/components/CareerPathGame";
-import { fetchRandomPlayer } from "@/lib/data-source";
+import { fetchRandomPlayer, getLastCareerStintsDebug } from "@/lib/data-source";
 
 export const metadata = {
   title: "Career Path | Football Games",
@@ -11,5 +11,14 @@ export const dynamic = "force-dynamic";
 
 export default async function CareerPathPage() {
   const answer = await fetchRandomPlayer();
-  return <CareerPathGame key={answer.id} answer={answer} />;
+  const debug = getLastCareerStintsDebug();
+  return (
+    <>
+      <CareerPathGame key={answer.id} answer={answer} />
+      {/* TEMPORARY diagnostic — remove once the production stats issue is resolved */}
+      <div style={{ display: "none" }} id="career-stints-debug">
+        {JSON.stringify(debug)}
+      </div>
+    </>
+  );
 }

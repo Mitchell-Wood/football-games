@@ -153,25 +153,48 @@ function attachClubStats(draft: CareerPathDraft[], stints: InfoboxStint[]): Care
   });
 }
 
-const careerStintsCache = new Map<string, Promise<InfoboxStint[]>>();
+type CareerStintsResult = { title: string | null; stints: InfoboxStint[]; error?: string };
 
-async function lookupCareerStints(name: string, dob: string): Promise<InfoboxStint[]> {
+const careerStintsCache = new Map<string, Promise<CareerStintsResult>>();
+
+async function lookupCareerStints(name: string, dob: string): Promise<CareerStintsResult> {
   const title = await findWikipediaTitle(name, dob);
-  if (!title) return [];
-  return fetchWikipediaSeniorCareer(title);
+  if (!title) return { title: null, stints: [] };
+  const stints = await fetchWikipediaSeniorCareer(title);
+  return { title, stints };
 }
 
-function cachedCareerStints(name: string, dob: string): Promise<InfoboxStint[]> {
+function cachedCareerStints(name: string, dob: string): Promise<CareerStintsResult> {
   const key = `${name}:${dob}`;
   let cached = careerStintsCache.get(key);
   if (!cached) {
     cached = lookupCareerStints(name, dob).catch((err) => {
+      const message = err instanceof Error ? err.message : String(err);
       console.error(`Wikipedia career-stats lookup failed for "${name}" (${dob}):`, err);
-      return [];
+      return { title: null, stints: [], error: message };
     });
     careerStintsCache.set(key, cached);
   }
   return cached;
+}
+
+// TEMPORARY: captures diagnostics for the most recent fetchPlayerDetails
+// call so the career-path page can surface them in the response itself
+// (see getLastCareerStintsDebug() in page.tsx) — console.error logging
+// hasn't been findable in Render's log viewer, so this is a way to see
+// what actually happened on a real request without host log access.
+// Remove once the production "no stats" issue is fully diagnosed.
+let lastDebug: {
+  playerId: string;
+  name: string;
+  dob: string | null;
+  wikipediaTitle: string | null;
+  stintsCount: number;
+  error?: string;
+} | null = null;
+
+export function getLastCareerStintsDebug() {
+  return lastDebug;
 }
 
 async function fetchPlayerDetails(id: string): Promise<Player | null> {
@@ -188,8 +211,17 @@ async function fetchPlayerDetails(id: string): Promise<Player | null> {
   if (draft.length === 0) return null;
 
   const dob = extractDob(profile.description);
-  const stints = dob ? await cachedCareerStints(profile.name, dob) : [];
-  const careerPath = stints.length > 0 ? attachClubStats(draft, stints) : draft;
+  const result = dob ? await cachedCareerStints(profile.name, dob) : { title: null, stints: [] };
+  const careerPath = result.stints.length > 0 ? attachClubStats(draft, result.stints) : draft;
+
+  lastDebug = {
+    playerId: id,
+    name: profile.name,
+    dob,
+    wikipediaTitle: result.title,
+    stintsCount: result.stints.length,
+    error: result.error,
+  };
 
   return {
     id: profile.id,
