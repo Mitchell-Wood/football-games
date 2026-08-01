@@ -1,4 +1,4 @@
-import type { Player } from "@/lib/types";
+import type { CareerStop, Player } from "@/lib/types";
 import { players as mockPlayers } from "@/data/players";
 import {
   USE_LIVE_DATA,
@@ -10,6 +10,8 @@ import {
   type ClubRef,
   type SquadPlayerRef,
 } from "@/lib/transfermarkt";
+import { fetchWikidataClubStints, type ClubStint } from "@/lib/wikidata";
+import { foldDiacritics } from "@/lib/text-match";
 
 /**
  * Single seam between game logic and player data. Every game should read
@@ -26,6 +28,7 @@ import {
 type TransfermarktProfile = {
   id: string;
   name: string;
+  description: string;
   citizenship?: string[];
 };
 
@@ -38,21 +41,128 @@ type TransfermarktTransfers = {
   transfers: TransfermarktTransfer[];
 };
 
+type CareerPathDraft = {
+  club: string;
+  seasons: string;
+  startYear: number;
+  endYear: number | null;
+};
+
 function seasonLabel(startYear: number, endYear: number | null) {
   if (endYear === null) return `${startYear}–`;
   if (endYear === startYear) return `${startYear}`;
   return `${startYear}–${endYear}`;
 }
 
-function buildCareerPath(transfers: TransfermarktTransfer[]) {
+function buildCareerPath(transfers: TransfermarktTransfer[]): CareerPathDraft[] {
   // API returns most-recent-first; oldest-first makes the stint math easier.
   const chronological = [...transfers].reverse();
   return chronological.map((transfer, i) => {
     const startYear = new Date(transfer.date).getFullYear();
     const next = chronological[i + 1];
     const endYear = next ? new Date(next.date).getFullYear() : null;
-    return { club: transfer.clubTo.name, seasons: seasonLabel(startYear, endYear) };
+    return { club: transfer.clubTo.name, startYear, endYear, seasons: seasonLabel(startYear, endYear) };
   });
+}
+
+// transfermarkt-api's profile.dateOfBirth field is broken (comes back
+// missing for every player tested), but the free-text description always
+// has it in "* DD/MM/YYYY in City, Country" form.
+function extractDob(description: string): string | null {
+  const match = description.match(/\*\s*(\d{2})\/(\d{2})\/(\d{4})/);
+  if (!match) return null;
+  const [, day, month, year] = match;
+  return `${year}-${month}-${day}`;
+}
+
+function overlapYears(aStart: number, aEnd: number, bStart: number, bEnd: number): number {
+  return Math.max(0, Math.min(aEnd, bEnd) - Math.max(aStart, bStart) + 1);
+}
+
+// Pure organizational suffixes that appear across huge numbers of unrelated
+// clubs — kept out of the token set so e.g. "CD" doesn't bridge two
+// completely different Spanish clubs.
+const CLUB_NAME_STOPWORDS = new Set(["fc", "cf", "sc", "ac", "afc", "cd", "ud", "sd", "ss"]);
+
+function significantTokens(name: string): string[] {
+  return foldDiacritics(name.toLowerCase())
+    .replace(/[^a-z0-9\s]/g, " ")
+    .split(/\s+/)
+    .filter((t) => t.length >= 3 && !CLUB_NAME_STOPWORDS.has(t));
+}
+
+// Loose on purpose (prefix match on the shorter token, not exact equality)
+// so "Barça"/"Barcelona" or "Man"/"Manchester" style abbreviations still
+// match, while nothing at all in common (e.g. two unrelated club names)
+// correctly doesn't.
+function tokensSimilar(a: string, b: string): boolean {
+  const shorter = a.length <= b.length ? a : b;
+  const longer = a.length <= b.length ? b : a;
+  const prefix = shorter.slice(0, 4);
+  return longer.startsWith(prefix);
+}
+
+function namesLikelyMatch(a: string, b: string): boolean {
+  const tokensA = significantTokens(a);
+  const tokensB = significantTokens(b);
+  return tokensA.some((ta) => tokensB.some((tb) => tokensSimilar(ta, tb)));
+}
+
+// Attaches Wikidata appearances/goals to whichever careerPath stop overlaps
+// a stint the most, in years — restricted to stints whose club name is at
+// least plausibly the same club, requiring a clear single best match (no
+// tie), AND requiring the overlap to cover at least half of the stop's own
+// duration. All three checks earned their place from real bugs found while
+// testing against Messi's actual career:
+//   - name check: without it, his Newell's Old Boys youth-team stats (176
+//     apps / 234 goals, genuinely his — as a child) matched his separate
+//     Barça youth spell, purely because the date ranges shared one calendar
+//     year at a transfer boundary.
+//   - duration-coverage check: without it, that same kind of 1-year
+//     boundary overlap matched his 16-year senior Barcelona career (2005-
+//     2021) to Barcelona's reserve team (Barça Atlètic), showing ~22 apps
+//     for a stint that should show ~778 — a single stray year of overlap
+//     was "the best score" simply because nothing else overlapped at all.
+// Attaching stats to the wrong stop is a confidently wrong answer, not just
+// a missing one, so all three have to pass.
+function attachClubStats(draft: CareerPathDraft[], stints: ClubStint[]): CareerStop[] {
+  const currentYear = new Date().getFullYear();
+  return draft.map(({ club, seasons, startYear, endYear }) => {
+    const stopEnd = endYear ?? currentYear;
+    const minRequiredOverlap = Math.ceil((stopEnd - startYear + 1) / 2);
+    let best: ClubStint | null = null;
+    let bestScore = 0;
+    let secondBestScore = 0;
+    for (const stint of stints) {
+      if (stint.startYear === null) continue;
+      if (!namesLikelyMatch(club, stint.teamLabel)) continue;
+      const stintEnd = stint.endYear ?? currentYear;
+      const score = overlapYears(startYear, stopEnd, stint.startYear, stintEnd);
+      if (score > bestScore) {
+        secondBestScore = bestScore;
+        bestScore = score;
+        best = stint;
+      } else if (score > secondBestScore) {
+        secondBestScore = score;
+      }
+    }
+    if (best && bestScore >= minRequiredOverlap && bestScore > secondBestScore) {
+      return { club, seasons, appearances: best.appearances, goals: best.goals };
+    }
+    return { club, seasons };
+  });
+}
+
+const wikidataStintsCache = new Map<string, Promise<ClubStint[]>>();
+
+function cachedWikidataStints(name: string, dob: string): Promise<ClubStint[]> {
+  const key = `${name}:${dob}`;
+  let cached = wikidataStintsCache.get(key);
+  if (!cached) {
+    cached = fetchWikidataClubStints(name, dob).catch(() => []);
+    wikidataStintsCache.set(key, cached);
+  }
+  return cached;
 }
 
 async function fetchPlayerDetails(id: string): Promise<Player | null> {
@@ -65,8 +175,12 @@ async function fetchPlayerDetails(id: string): Promise<Player | null> {
 
   const profile = (await profileRes.json()) as TransfermarktProfile;
   const transfers = (await transfersRes.json()) as TransfermarktTransfers;
-  const careerPath = buildCareerPath(transfers.transfers);
-  if (careerPath.length === 0) return null;
+  const draft = buildCareerPath(transfers.transfers);
+  if (draft.length === 0) return null;
+
+  const dob = extractDob(profile.description);
+  const stints = dob ? await cachedWikidataStints(profile.name, dob) : [];
+  const careerPath = stints.length > 0 ? attachClubStats(draft, stints) : draft;
 
   return {
     id: profile.id,

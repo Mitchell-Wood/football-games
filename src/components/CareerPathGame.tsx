@@ -119,6 +119,13 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
             <span className="font-medium">{stop.club}</span>
             <span className="text-xs text-black/50 dark:text-white/50">
               {stop.seasons}
+              {stop.appearances !== undefined && (
+                <>
+                  {" "}
+                  · {stop.appearances} {stop.appearances === 1 ? "app" : "apps"},{" "}
+                  {stop.goals ?? 0} {stop.goals === 1 ? "goal" : "goals"}
+                </>
+              )}
             </span>
           </li>
         ))}

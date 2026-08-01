@@ -1,6 +1,8 @@
 export type CareerStop = {
   club: string;
   seasons: string;
+  appearances?: number;
+  goals?: number;
 };
 
 export type Achievement = {

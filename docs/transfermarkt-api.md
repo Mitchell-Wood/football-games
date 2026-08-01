@@ -58,8 +58,8 @@ Useful endpoints for Career Path:
   Transfermarkt's stats page, which no longer exists there — the page is
   apparently JS-rendered now and the static HTML this scraper fetches has no
   `<table>` at all. Not fixable without patching the scraper's XPath/parsing
-  logic (out of scope here). This is why `careerPath` stops don't show
-  appearances/goals.
+  logic (out of scope here). Per-club appearances/goals now come from
+  Wikidata instead — see below.
 
 Note: Transfermarkt sits behind Cloudflare and occasionally returns a
 transient `502`/`503` to the scraper. A retry a few seconds later usually
@@ -130,6 +130,46 @@ Retired players' final `careerPath` stop is literally the club name
 is left in deliberately, so it reads like one more entry in their career
 list rather than being filtered out.
 
+## Per-club appearances/goals (Wikidata)
+
+Since transfermarkt-api's own `/players/{id}/stats` is broken (see above),
+appearances/goals per `careerPath` stop come from Wikidata instead
+(`src/lib/wikidata.ts`), matched by full name + exact date of birth:
+
+1. `wbsearchentities` (Wikidata's search API) for the player's name → up to
+   10 candidate Wikidata items.
+2. One SPARQL query (`https://query.wikidata.org/sparql`) against those
+   candidates, filtered to whichever one has an exact day-precision date of
+   birth match (parsed from transfermarkt's `profile.description` text,
+   since — like `/stats` — the structured `dateOfBirth` field on the
+   profile endpoint is also broken/missing). Returns that person's
+   `P54` (member of sports team) claims, restricted to association football
+   clubs (excludes national-team caps), with `P580`/`P582` (start/end) and
+   `P1350`/`P1351` (appearances/goals) qualifiers.
+
+Matching by name + exact DOB was validated against real edge cases before
+building this: two different footballers both named "David Silva," both
+born in 1986 but on different days, correctly disambiguate on full date;
+"Paul Davis" returns 10 Wikidata entries but only one footballer, already
+tagged as such in the search result. Wikidata's own "Transfermarkt player
+ID" property (P2276) was *not* used as the join key — tested against
+Fernando Llorente and it pointed to a stale/invalid Transfermarkt ID.
+
+`data-source.ts` then attaches each Wikidata stint to whichever
+`careerPath` stop it overlaps most, in years — but only if the club names
+are at least plausibly the same (token-prefix match, so "Barça"/"Barcelona"
+or "Man"/"Manchester" still connect) **and** the overlap covers at least
+half of the stop's own duration. Both checks exist because of real bugs
+found testing against Messi's actual career: without the name check, his
+childhood Newell's Old Boys stats (176 apps / 234 goals — genuinely his, as
+a kid) matched onto his separate Barça youth spell, purely from a
+transfer-date-rounding artifact sharing one calendar year. Without the
+duration check, that same kind of 1-year boundary overlap matched his
+16-year senior Barcelona career to Barcelona's reserve team, showing ~22
+apps for a stint that should show ~778. Attaching stats to the wrong stop
+is a confidently wrong answer, not just a missing one, so a stop is left
+with no appearances/goals rather than guessing when neither check clears.
+
 To enable it locally, create `.env.local`:
 
 ```
@@ -144,9 +184,19 @@ Known limitations:
   list won't come up.
 - The answer pool only reaches back to 1980 (`OLDEST_SEASON_YEAR`).
 - Loan spells aren't distinguished from permanent transfers in `careerPath`.
-- No appearances/goals per club stop — the upstream `/players/{id}/stats`
-  endpoint is broken (see above).
 - Both fame filters are proxies, not guarantees — a very young player who
   was already valuable, or a fringe player who happened to be on a
   trophy-winning squad, can still slip in with a short or unremarkable
   career path.
+- Appearances/goals are best-effort, not guaranteed per stop:
+  - No match at all if the player isn't on Wikidata, or their DOB there
+    only has year/month precision (exact-day match required).
+  - Club-name matching is prefix-based, not alias-aware — pure acronyms
+    like transfermarkt's "PSG" vs Wikidata's "Paris Saint-Germain FC" don't
+    share a text prefix, so that stint is silently skipped rather than
+    matched.
+  - Adjacent same-club youth/reserve tiers (e.g. a club's U16 vs U19 vs "C"
+    team) can still occasionally get attributed to the wrong neighbouring
+    tier when Wikidata's own qualifier dates for those transitions are only
+    year-precision on both sides — the numbers end up small and plausible
+    either way, just not necessarily attached to the exact right tier.
