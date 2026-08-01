@@ -52,4 +52,7 @@ it plugs into `src/lib/data-source.ts`.
 
 ## Deploy
 
-Deploys cleanly to [Vercel](https://vercel.com/new) like any Next.js app.
+Configured for [Render](https://render.com) via `render.yaml` (Blueprint):
+connect the repo on Render and it will pick up the build/start commands
+automatically. Also deploys cleanly to [Vercel](https://vercel.com/new)
+like any Next.js app.
