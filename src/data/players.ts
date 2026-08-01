@@ -1,0 +1,170 @@
+import type { Player } from "@/lib/types";
+
+/**
+ * Placeholder dataset (senior club career only, chronological).
+ * TODO: replace with data fetched from a self-hosted transfermarkt-api
+ * instance — see docs/transfermarkt-api.md and src/lib/data-source.ts.
+ */
+export const players: Player[] = [
+  {
+    id: "cristiano-ronaldo",
+    name: "Cristiano Ronaldo",
+    nationality: "Portugal",
+    careerPath: [
+      { club: "Sporting CP", seasons: "2002–2003" },
+      { club: "Manchester United", seasons: "2003–2009" },
+      { club: "Real Madrid", seasons: "2009–2018" },
+      { club: "Juventus", seasons: "2018–2021" },
+      { club: "Manchester United", seasons: "2021–2022" },
+      { club: "Al-Nassr", seasons: "2023–" },
+    ],
+  },
+  {
+    id: "lionel-messi",
+    name: "Lionel Messi",
+    nationality: "Argentina",
+    careerPath: [
+      { club: "Barcelona", seasons: "2004–2021" },
+      { club: "Paris Saint-Germain", seasons: "2021–2023" },
+      { club: "Inter Miami", seasons: "2023–" },
+    ],
+  },
+  {
+    id: "zlatan-ibrahimovic",
+    name: "Zlatan Ibrahimović",
+    nationality: "Sweden",
+    careerPath: [
+      { club: "Malmö FF", seasons: "1999–2001" },
+      { club: "Ajax", seasons: "2001–2004" },
+      { club: "Juventus", seasons: "2004–2006" },
+      { club: "Inter Milan", seasons: "2006–2009" },
+      { club: "Barcelona", seasons: "2009–2010" },
+      { club: "AC Milan", seasons: "2010–2012" },
+      { club: "Paris Saint-Germain", seasons: "2012–2016" },
+      { club: "Manchester United", seasons: "2016–2018" },
+      { club: "LA Galaxy", seasons: "2018–2019" },
+      { club: "AC Milan", seasons: "2020–2023" },
+    ],
+  },
+  {
+    id: "wayne-rooney",
+    name: "Wayne Rooney",
+    nationality: "England",
+    careerPath: [
+      { club: "Everton", seasons: "2002–2004" },
+      { club: "Manchester United", seasons: "2004–2017" },
+      { club: "Everton", seasons: "2017–2018" },
+      { club: "D.C. United", seasons: "2018–2019" },
+      { club: "Derby County", seasons: "2020–2021" },
+    ],
+  },
+  {
+    id: "andrea-pirlo",
+    name: "Andrea Pirlo",
+    nationality: "Italy",
+    careerPath: [
+      { club: "Brescia", seasons: "1994–1998" },
+      { club: "Inter Milan", seasons: "1998–2001" },
+      { club: "Brescia (loan)", seasons: "1999–2000" },
+      { club: "AC Milan", seasons: "2001–2011" },
+      { club: "Juventus", seasons: "2011–2015" },
+      { club: "New York City FC", seasons: "2015–2017" },
+    ],
+  },
+  {
+    id: "luis-suarez",
+    name: "Luis Suárez",
+    nationality: "Uruguay",
+    careerPath: [
+      { club: "Nacional", seasons: "2005–2006" },
+      { club: "Groningen", seasons: "2006–2007" },
+      { club: "Ajax", seasons: "2007–2011" },
+      { club: "Liverpool", seasons: "2011–2014" },
+      { club: "Barcelona", seasons: "2014–2020" },
+      { club: "Atlético Madrid", seasons: "2020–2022" },
+      { club: "Nacional", seasons: "2022" },
+      { club: "Gremio", seasons: "2023" },
+      { club: "Inter Miami", seasons: "2024–" },
+    ],
+  },
+  {
+    id: "didier-drogba",
+    name: "Didier Drogba",
+    nationality: "Ivory Coast",
+    careerPath: [
+      { club: "Le Mans", seasons: "1998–2002" },
+      { club: "Guingamp", seasons: "2002–2003" },
+      { club: "Marseille", seasons: "2003–2004" },
+      { club: "Chelsea", seasons: "2004–2012" },
+      { club: "Shanghai Shenhua", seasons: "2012–2013" },
+      { club: "Galatasaray", seasons: "2013–2014" },
+      { club: "Chelsea", seasons: "2014–2015" },
+      { club: "Montreal Impact", seasons: "2015–2017" },
+      { club: "Phoenix Rising", seasons: "2017–2018" },
+    ],
+  },
+  {
+    id: "xabi-alonso",
+    name: "Xabi Alonso",
+    nationality: "Spain",
+    careerPath: [
+      { club: "Real Sociedad", seasons: "1999–2004" },
+      { club: "Liverpool", seasons: "2004–2009" },
+      { club: "Real Madrid", seasons: "2009–2014" },
+      { club: "Bayern Munich", seasons: "2014–2017" },
+    ],
+  },
+  {
+    id: "samuel-eto'o",
+    name: "Samuel Eto'o",
+    nationality: "Cameroon",
+    careerPath: [
+      { club: "Real Madrid", seasons: "1997–2000" },
+      { club: "Mallorca", seasons: "2000–2004" },
+      { club: "Barcelona", seasons: "2004–2009" },
+      { club: "Inter Milan", seasons: "2009–2011" },
+      { club: "Anzhi Makhachkala", seasons: "2011–2013" },
+      { club: "Chelsea", seasons: "2013–2014" },
+      { club: "Everton", seasons: "2014–2015" },
+      { club: "Sampdoria", seasons: "2015–2017" },
+      { club: "Antalyaspor", seasons: "2017–2019" },
+    ],
+  },
+  {
+    id: "gareth-bale",
+    name: "Gareth Bale",
+    nationality: "Wales",
+    careerPath: [
+      { club: "Southampton", seasons: "2006–2007" },
+      { club: "Tottenham Hotspur", seasons: "2007–2013" },
+      { club: "Real Madrid", seasons: "2013–2022" },
+      { club: "LAFC", seasons: "2022–2023" },
+    ],
+  },
+  {
+    id: "edinson-cavani",
+    name: "Edinson Cavani",
+    nationality: "Uruguay",
+    careerPath: [
+      { club: "Danubio", seasons: "2005–2007" },
+      { club: "Palermo", seasons: "2007–2010" },
+      { club: "Napoli", seasons: "2010–2013" },
+      { club: "Paris Saint-Germain", seasons: "2013–2020" },
+      { club: "Manchester United", seasons: "2020–2022" },
+      { club: "Valencia", seasons: "2022–2023" },
+      { club: "Boca Juniors", seasons: "2023–" },
+    ],
+  },
+  {
+    id: "thierry-henry",
+    name: "Thierry Henry",
+    nationality: "France",
+    careerPath: [
+      { club: "Monaco", seasons: "1994–1999" },
+      { club: "Juventus", seasons: "1999" },
+      { club: "Arsenal", seasons: "1999–2007" },
+      { club: "Barcelona", seasons: "2007–2010" },
+      { club: "New York Red Bulls", seasons: "2010–2014" },
+    ],
+  },
+];
