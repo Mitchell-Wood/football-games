@@ -153,7 +153,7 @@ function attachClubStats(draft: CareerPathDraft[], stints: InfoboxStint[]): Care
   });
 }
 
-type CareerStintsResult = { title: string | null; stints: InfoboxStint[]; error?: string };
+type CareerStintsResult = { title: string | null; stints: InfoboxStint[] };
 
 const careerStintsCache = new Map<string, Promise<CareerStintsResult>>();
 
@@ -177,40 +177,16 @@ function cachedCareerStints(name: string, dob: string): Promise<CareerStintsResu
   // this server process until the next redeploy.
   return cached.catch((err) => {
     careerStintsCache.delete(key);
-    const message = err instanceof Error ? err.message : String(err);
     console.error(`Wikipedia career-stats lookup failed for "${name}" (${dob}):`, err);
-    return { title: null, stints: [], error: message };
+    return { title: null, stints: [] };
   });
 }
 
-// TEMPORARY: captures diagnostics for the most recent fetchPlayerDetails
-// call so the career-path page can surface them in the response itself
-// (see getLastCareerStintsDebug() in page.tsx) — console.error logging
-// hasn't been findable in Render's log viewer, so this is a way to see
-// what actually happened on a real request without host log access.
-// Remove once the production "no stats" issue is fully diagnosed.
-let lastDebug: {
-  playerId: string;
-  name: string;
-  dob: string | null;
-  wikipediaTitle: string | null;
-  stintsCount: number;
-  error?: string;
-  achievementsCount: number;
-  achievementsError?: string;
-} | null = null;
-
-export function getLastCareerStintsDebug() {
-  return lastDebug;
-}
-
 async function fetchPlayerDetails(id: string): Promise<Player | null> {
-  let achievementsError: string | undefined;
   const [profileRes, transfersRes, achievements] = await Promise.all([
     fetch(`${API_BASE_URL}/players/${id}/profile`),
     fetch(`${API_BASE_URL}/players/${id}/transfers`),
     getPlayerAchievements(id).catch((err) => {
-      achievementsError = err instanceof Error ? err.message : String(err);
       console.error(`Achievements fetch failed for player ${id}:`, err);
       return [];
     }),
@@ -225,17 +201,6 @@ async function fetchPlayerDetails(id: string): Promise<Player | null> {
   const dob = extractDob(profile.description);
   const result = dob ? await cachedCareerStints(profile.name, dob) : { title: null, stints: [] };
   const careerPath = result.stints.length > 0 ? attachClubStats(draft, result.stints) : draft;
-
-  lastDebug = {
-    playerId: id,
-    name: profile.name,
-    achievementsCount: achievements.length,
-    achievementsError,
-    dob,
-    wikipediaTitle: result.title,
-    stintsCount: result.stints.length,
-    error: result.error,
-  };
 
   return {
     id: profile.id,
