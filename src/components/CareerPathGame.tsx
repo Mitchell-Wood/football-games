@@ -112,6 +112,21 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
     }
   }
 
+  // A skip counts as a used guess (so it still advances to the next club,
+  // or ends the game on the last one) but can never be "correct".
+  function skipGuess() {
+    if (status !== "playing") return;
+
+    const nextGuesses = [...guesses, "Skipped"];
+    setGuesses(nextGuesses);
+    setGuess("");
+    setShowSuggestions(false);
+
+    if (nextGuesses.length >= maxGuesses) {
+      setStatus("lost");
+    }
+  }
+
   function playAgain() {
     window.location.reload();
   }
@@ -225,6 +240,13 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
             className="rounded-md bg-foreground text-background px-4 py-2 font-medium"
           >
             Guess
+          </button>
+          <button
+            type="button"
+            onClick={skipGuess}
+            className="rounded-md border border-black/15 dark:border-white/20 px-4 py-2 font-medium"
+          >
+            Skip
           </button>
         </form>
       )}
