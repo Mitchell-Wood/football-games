@@ -244,15 +244,25 @@ function pickRandomSeasonYear(): number {
 
 // A squad snapshot has ~25-40 players including fringe/reserve names
 // nobody will recognise. Market value (as of that season) is a decent,
-// era-robust fame proxy for seasons that have it.
-const GUESSABLE_SQUAD_SIZE = 15;
+// era-robust fame proxy for seasons that have it. Started at 15 (roughly
+// "top half of the squad") but that still let through squad-depth players
+// who are good enough to be valuable without being recognisable — tightened
+// to the players who were genuinely first-choice.
+const GUESSABLE_SQUAD_SIZE = 8;
+
+// A young player can carry a big valuation on potential alone, well before
+// they're actually known — excluded from the market-value ranking so a
+// highly-rated teenager doesn't crowd out established first-teamers.
+const MIN_GUESSABLE_AGE = 20;
 
 // Pre-2004 seasons have no market value at all, so instead: probe a random
 // sample of the squad for trophy count (achievements endpoint goes back
-// decades) and draw from whoever scored highest in that sample. Capped
-// small since each probe is its own scrape request.
-const ACHIEVEMENT_SAMPLE_SIZE = 6;
-const ACHIEVEMENT_GUESSABLE_SIZE = 3;
+// decades) and draw from whoever scored highest in that sample. Sample
+// size capped since each probe is its own scrape request; the final draw
+// is narrower than the sample so it's the clearly-most-decorated, not just
+// above-average.
+const ACHIEVEMENT_SAMPLE_SIZE = 8;
+const ACHIEVEMENT_GUESSABLE_SIZE = 2;
 
 // Trophy count only means something if the club was actually competitive
 // that season — a random member of a mid-table club's squad usually has
@@ -304,7 +314,11 @@ async function guessablePlayers(
   seasonYear: number
 ): Promise<SquadPlayerRef[]> {
   if (seasonYear >= MARKET_VALUE_SEASON_YEAR) {
-    return [...squad]
+    const establishedPlayers = squad.filter(
+      (p) => p.age === undefined || p.age >= MIN_GUESSABLE_AGE
+    );
+    const pool = establishedPlayers.length > 0 ? establishedPlayers : squad;
+    return [...pool]
       .sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0))
       .slice(0, GUESSABLE_SQUAD_SIZE);
   }

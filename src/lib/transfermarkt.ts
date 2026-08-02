@@ -20,7 +20,7 @@ export async function searchTransfermarktPlayers(query: string) {
 export const TOP_LEAGUE_COMPETITION_IDS = ["GB1", "IT1", "L1", "FR1", "ES1"] as const;
 
 export type ClubRef = { id: string; name: string };
-export type SquadPlayerRef = { id: string; name: string; marketValue?: number };
+export type SquadPlayerRef = { id: string; name: string; marketValue?: number; age?: number };
 
 // season_id scopes the club list to who actually played in that
 // competition that season — important for old seasons, since a club
