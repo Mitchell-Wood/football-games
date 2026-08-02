@@ -168,14 +168,19 @@ function cachedCareerStints(name: string, dob: string): Promise<CareerStintsResu
   const key = `${name}:${dob}`;
   let cached = careerStintsCache.get(key);
   if (!cached) {
-    cached = lookupCareerStints(name, dob).catch((err) => {
-      const message = err instanceof Error ? err.message : String(err);
-      console.error(`Wikipedia career-stats lookup failed for "${name}" (${dob}):`, err);
-      return { title: null, stints: [], error: message };
-    });
+    cached = lookupCareerStints(name, dob);
     careerStintsCache.set(key, cached);
   }
-  return cached;
+  // A failed lookup is not cached — it's usually a transient network hiccup
+  // (same Cloudflare flakiness noted elsewhere in this file), and caching
+  // it would turn one bad request into a permanent miss for this player on
+  // this server process until the next redeploy.
+  return cached.catch((err) => {
+    careerStintsCache.delete(key);
+    const message = err instanceof Error ? err.message : String(err);
+    console.error(`Wikipedia career-stats lookup failed for "${name}" (${dob}):`, err);
+    return { title: null, stints: [], error: message };
+  });
 }
 
 // TEMPORARY: captures diagnostics for the most recent fetchPlayerDetails
@@ -191,6 +196,8 @@ let lastDebug: {
   wikipediaTitle: string | null;
   stintsCount: number;
   error?: string;
+  achievementsCount: number;
+  achievementsError?: string;
 } | null = null;
 
 export function getLastCareerStintsDebug() {
@@ -198,10 +205,15 @@ export function getLastCareerStintsDebug() {
 }
 
 async function fetchPlayerDetails(id: string): Promise<Player | null> {
+  let achievementsError: string | undefined;
   const [profileRes, transfersRes, achievements] = await Promise.all([
     fetch(`${API_BASE_URL}/players/${id}/profile`),
     fetch(`${API_BASE_URL}/players/${id}/transfers`),
-    getPlayerAchievements(id).catch(() => []),
+    getPlayerAchievements(id).catch((err) => {
+      achievementsError = err instanceof Error ? err.message : String(err);
+      console.error(`Achievements fetch failed for player ${id}:`, err);
+      return [];
+    }),
   ]);
   if (!profileRes.ok || !transfersRes.ok) return null;
 
@@ -217,6 +229,8 @@ async function fetchPlayerDetails(id: string): Promise<Player | null> {
   lastDebug = {
     playerId: id,
     name: profile.name,
+    achievementsCount: achievements.length,
+    achievementsError,
     dob,
     wikipediaTitle: result.title,
     stintsCount: result.stints.length,
@@ -305,12 +319,19 @@ const achievementScoreCache = new Map<string, Promise<number>>();
 function cachedAchievementScore(playerId: string): Promise<number> {
   let cached = achievementScoreCache.get(playerId);
   if (!cached) {
-    cached = getPlayerAchievements(playerId)
-      .then((achievements) => achievements.reduce((sum, a) => sum + a.count, 0))
-      .catch(() => 0);
+    cached = getPlayerAchievements(playerId).then((achievements) =>
+      achievements.reduce((sum, a) => sum + a.count, 0)
+    );
     achievementScoreCache.set(playerId, cached);
   }
-  return cached;
+  // Same reasoning as cachedCareerStints: don't let a transient failure
+  // permanently zero out this player's fame score for the rest of the
+  // server process's lifetime.
+  return cached.catch((err) => {
+    achievementScoreCache.delete(playerId);
+    console.error(`Achievement score lookup failed for player ${playerId}:`, err);
+    return 0;
+  });
 }
 
 async function guessablePlayers(
