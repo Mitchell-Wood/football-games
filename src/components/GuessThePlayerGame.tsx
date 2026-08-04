@@ -1,21 +1,22 @@
 "use client";
 
 import { useState } from "react";
-import type { Player } from "@/lib/types";
+import Image from "next/image";
+import type { PhotoPlayer } from "@/lib/types";
 import { normalize } from "@/lib/text-match";
 import PlayerNameInput from "@/components/PlayerNameInput";
 
-export default function CareerPathGame({ answer }: { answer: Player }) {
+const MAX_GUESSES = 5;
+// Blur sharpens one step per guess, reaching 0 by the final (MAX_GUESSES-th)
+// guess — one entry per guess taken so far, indexed by guesses.length.
+const BLUR_STEPS = [20, 14, 8, 3, 0];
+
+export default function GuessThePlayerGame({ answer }: { answer: PhotoPlayer }) {
   const [guess, setGuess] = useState("");
   const [guesses, setGuesses] = useState<string[]>([]);
   const [status, setStatus] = useState<"playing" | "won" | "lost">("playing");
 
-  // One guess per club, plus a bonus guess once every club is revealed —
-  // that final round trades a new club reveal for nationality/honours.
-  const maxGuesses = answer.careerPath.length + 1;
-  const clubsShown = Math.min(guesses.length + 1, answer.careerPath.length);
-  const revealed = answer.careerPath.slice(0, clubsShown);
-  const bonusRevealed = guesses.length >= answer.careerPath.length;
+  const blurPx = BLUR_STEPS[Math.min(guesses.length, BLUR_STEPS.length - 1)];
 
   function submitGuess(e: React.FormEvent) {
     e.preventDefault();
@@ -28,13 +29,13 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
 
     if (isCorrect) {
       setStatus("won");
-    } else if (nextGuesses.length >= maxGuesses) {
+    } else if (nextGuesses.length >= MAX_GUESSES) {
       setStatus("lost");
     }
   }
 
-  // A skip counts as a used guess (so it still advances to the next club,
-  // or ends the game on the last one) but can never be "correct".
+  // A skip counts as a used guess (so the image still sharpens) but can
+  // never be "correct".
   function skipGuess() {
     if (status !== "playing") return;
 
@@ -42,19 +43,16 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
     setGuesses(nextGuesses);
     setGuess("");
 
-    if (nextGuesses.length >= maxGuesses) {
+    if (nextGuesses.length >= MAX_GUESSES) {
       setStatus("lost");
     }
   }
 
-  // Jumps straight to the bonus round: every club plus the nationality/
-  // honours clue, with exactly one guess left. Keeps whatever real guesses
-  // were already made and pads the rest with "Skipped", so it lands on the
-  // same final-guess state skipGuess() would eventually reach one club at a
-  // time — this never ends the game itself, since a reveal isn't a guess.
+  // Jumps straight to a fully sharpened photo with exactly one guess left —
+  // same end state skipGuess() would eventually reach one step at a time.
   function revealAll() {
     if (status !== "playing") return;
-    const remaining = maxGuesses - 1 - guesses.length;
+    const remaining = MAX_GUESSES - 1 - guesses.length;
     if (remaining <= 0) return;
 
     setGuesses([...guesses, ...Array(remaining).fill("Skipped")]);
@@ -67,51 +65,24 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
 
   return (
     <div className="max-w-xl mx-auto px-4 py-10">
-      <h1 className="text-2xl font-bold mb-1">Career Path</h1>
+      <h1 className="text-2xl font-bold mb-1">Guess the Player</h1>
       <p className="text-sm text-black/60 dark:text-white/60 mb-6">
-        Guess the player from their club career, revealed one stop at a time.
-        You have {maxGuesses} guesses.
+        Guess the player from their photo, which sharpens with every guess.
+        You have {MAX_GUESSES} guesses.
       </p>
 
-      <ol className="mb-6 space-y-2">
-        {revealed.map((stop, i) => (
-          <li
-            key={i}
-            className="flex items-baseline justify-between rounded-md border border-black/10 dark:border-white/15 px-3 py-2"
-          >
-            <span className="font-medium">{stop.club}</span>
-            <span className="text-xs text-black/50 dark:text-white/50">
-              {stop.seasons}
-              {stop.appearances !== undefined && (
-                <>
-                  {" "}
-                  · {stop.appearances} {stop.appearances === 1 ? "app" : "apps"},{" "}
-                  {stop.goals ?? 0} {stop.goals === 1 ? "goal" : "goals"}
-                </>
-              )}
-            </span>
-          </li>
-        ))}
-      </ol>
-
-      {bonusRevealed && (
-        <div className="mb-6 rounded-md border border-black/10 dark:border-white/15 px-3 py-2">
-          <p className="text-xs uppercase tracking-wide text-black/50 dark:text-white/50 mb-1">
-            Bonus clue
-          </p>
-          <p className="text-sm">
-            <span className="font-medium">Nationality:</span> {answer.nationality}
-          </p>
-          {answer.achievements && answer.achievements.length > 0 && (
-            <p className="text-sm">
-              <span className="font-medium">Honours:</span>{" "}
-              {answer.achievements
-                .map((a) => (a.count > 1 ? `${a.title} (${a.count}x)` : a.title))
-                .join(", ")}
-            </p>
-          )}
+      <div className="mb-6 overflow-hidden rounded-md border border-black/10 dark:border-white/15">
+        <div className="relative aspect-square w-full overflow-hidden bg-black/5 dark:bg-white/10">
+          <Image
+            src={answer.imageUrl}
+            alt={status === "playing" ? "Mystery player" : answer.name}
+            fill
+            unoptimized
+            style={{ filter: `blur(${blurPx}px)`, transform: "scale(1.1)" }}
+            className="object-cover transition-[filter] duration-500"
+          />
         </div>
-      )}
+      </div>
 
       {status === "playing" && (
         <form onSubmit={submitGuess} className="relative flex gap-2 mb-6">
@@ -134,7 +105,7 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
           >
             Skip
           </button>
-          {!bonusRevealed && (
+          {blurPx > 0 && (
             <button
               type="button"
               onClick={revealAll}
@@ -167,7 +138,7 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
       {guesses.length > 0 && (
         <div>
           <p className="text-xs uppercase tracking-wide text-black/50 dark:text-white/50 mb-2">
-            Guesses ({guesses.length}/{maxGuesses})
+            Guesses ({guesses.length}/{MAX_GUESSES})
           </p>
           <ul className="space-y-1">
             {guesses.map((g, i) => (

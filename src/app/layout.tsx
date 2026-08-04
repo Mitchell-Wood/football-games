@@ -34,9 +34,12 @@ export default function RootLayout({
             <Link href="/" className="font-bold text-lg tracking-tight">
               ⚽ Football Games
             </Link>
-            <nav className="text-sm text-black/60 dark:text-white/60">
+            <nav className="text-sm text-black/60 dark:text-white/60 flex gap-4">
               <Link href="/career-path" className="hover:text-current">
                 Career Path
+              </Link>
+              <Link href="/guess-the-player" className="hover:text-current">
+                Guess the Player
               </Link>
             </nav>
           </div>

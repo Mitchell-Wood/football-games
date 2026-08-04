@@ -16,10 +16,10 @@ const games: Game[] = [
     available: true,
   },
   {
-    name: "More coming soon",
-    href: "#",
-    description: "New football guessing games are on the way.",
-    available: false,
+    name: "Guess the Player",
+    href: "/guess-the-player",
+    description: "Guess the player from their photo, which sharpens with every guess.",
+    available: true,
   },
 ];
 

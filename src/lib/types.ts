@@ -17,3 +17,10 @@ export type Player = {
   careerPath: CareerStop[];
   achievements?: Achievement[];
 };
+
+export type PhotoPlayer = {
+  id: string;
+  name: string;
+  nationality: string;
+  imageUrl: string;
+};

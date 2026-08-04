@@ -1,5 +1,6 @@
-import type { CareerStop, Player } from "@/lib/types";
+import type { CareerStop, Player, PhotoPlayer } from "@/lib/types";
 import { players as mockPlayers } from "@/data/players";
+import { photoPlayers as mockPhotoPlayers } from "@/data/photo-players";
 import { topPlayers } from "@/data/top-players";
 import { API_BASE_URL, USE_LIVE_DATA, getPlayerAchievements } from "@/lib/transfermarkt";
 import { findWikipediaTitle } from "@/lib/wikidata";
@@ -24,6 +25,7 @@ type TransfermarktProfile = {
   name: string;
   description: string;
   citizenship?: string[];
+  imageUrl?: string;
 };
 
 type TransfermarktTransfer = {
@@ -245,4 +247,42 @@ export async function fetchRandomPlayer(): Promise<Player> {
     if (live) return live;
   }
   return mockPlayers[Math.floor(Math.random() * mockPlayers.length)];
+}
+
+// Guess the Player (photo) needs far less than Career Path — no transfer
+// history, no Wikipedia stats, no achievements — so this fetches just the
+// profile, straight from the same curated fame-ranked pool.
+async function fetchPlayerPhoto(id: string): Promise<PhotoPlayer | null> {
+  const res = await fetch(`${API_BASE_URL}/players/${id}/profile`);
+  if (!res.ok) return null;
+  const profile = (await res.json()) as TransfermarktProfile;
+  if (!profile.imageUrl) return null;
+  return {
+    id: profile.id,
+    name: profile.name,
+    nationality: profile.citizenship?.[0] ?? "Unknown",
+    imageUrl: profile.imageUrl,
+  };
+}
+
+async function fetchRandomLivePlayerPhoto(): Promise<PhotoPlayer | null> {
+  for (let attempt = 0; attempt < MAX_RANDOM_ATTEMPTS; attempt++) {
+    const candidate = pickRandom(topPlayers);
+    if (!candidate) return null;
+    try {
+      const player = await fetchPlayerPhoto(candidate.id);
+      if (player) return player;
+    } catch (err) {
+      console.error(`fetchPlayerPhoto failed for player ${candidate.id}:`, err);
+    }
+  }
+  return null;
+}
+
+export async function fetchRandomPlayerPhoto(): Promise<PhotoPlayer> {
+  if (USE_LIVE_DATA) {
+    const live = await fetchRandomLivePlayerPhoto();
+    if (live) return live;
+  }
+  return mockPhotoPlayers[Math.floor(Math.random() * mockPhotoPlayers.length)];
 }
