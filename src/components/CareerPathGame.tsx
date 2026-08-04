@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import type { Player } from "@/lib/types";
-import { normalize } from "@/lib/text-match";
+import { matchesPlayerName } from "@/lib/text-match";
 import PlayerNameInput from "@/components/PlayerNameInput";
 
 export default function CareerPathGame({ answer }: { answer: Player }) {
@@ -21,7 +21,7 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
     e.preventDefault();
     if (status !== "playing" || !guess.trim()) return;
 
-    const isCorrect = normalize(guess) === normalize(answer.name);
+    const isCorrect = matchesPlayerName(guess, answer.name);
     const nextGuesses = [...guesses, guess.trim()];
     setGuesses(nextGuesses);
     setGuess("");

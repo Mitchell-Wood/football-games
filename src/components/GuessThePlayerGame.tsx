@@ -3,7 +3,7 @@
 import { useState } from "react";
 import Image from "next/image";
 import type { PhotoPlayer } from "@/lib/types";
-import { normalize } from "@/lib/text-match";
+import { matchesPlayerName } from "@/lib/text-match";
 import PlayerNameInput from "@/components/PlayerNameInput";
 
 const MAX_GUESSES = 5;
@@ -23,7 +23,7 @@ export default function GuessThePlayerGame({ answer }: { answer: PhotoPlayer }) 
     e.preventDefault();
     if (status !== "playing" || !guess.trim()) return;
 
-    const isCorrect = normalize(guess) === normalize(answer.name);
+    const isCorrect = matchesPlayerName(guess, answer.name);
     const nextGuesses = [...guesses, guess.trim()];
     setGuesses(nextGuesses);
     setGuess("");
