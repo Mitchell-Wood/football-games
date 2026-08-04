@@ -16,7 +16,8 @@ export default function GuessThePlayerGame({ answer }: { answer: PhotoPlayer }) 
   const [guesses, setGuesses] = useState<string[]>([]);
   const [status, setStatus] = useState<"playing" | "won" | "lost">("playing");
 
-  const blurPx = BLUR_STEPS[Math.min(guesses.length, BLUR_STEPS.length - 1)];
+  const blurPx =
+    status === "playing" ? BLUR_STEPS[Math.min(guesses.length, BLUR_STEPS.length - 1)] : 0;
 
   function submitGuess(e: React.FormEvent) {
     e.preventDefault();
