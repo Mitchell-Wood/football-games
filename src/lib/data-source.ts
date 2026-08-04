@@ -223,8 +223,18 @@ async function fetchRandomLivePlayer(): Promise<Player | null> {
   for (let attempt = 0; attempt < MAX_RANDOM_ATTEMPTS; attempt++) {
     const candidate = pickRandom(topPlayers);
     if (!candidate) return null;
-    const player = await fetchPlayerDetails(candidate.id);
-    if (player) return player;
+    try {
+      const player = await fetchPlayerDetails(candidate.id);
+      if (player) return player;
+    } catch (err) {
+      // fetchPlayerDetails only guards against non-ok HTTP responses, not
+      // network-level failures (connection refused, DNS, timeout) — those
+      // throw. A previous version of this function had that covered
+      // incidentally, via try/catch further up a now-removed squad-browsing
+      // layer; this is the direct replacement now that nothing upstream
+      // catches it.
+      console.error(`fetchPlayerDetails failed for player ${candidate.id}:`, err);
+    }
   }
   return null;
 }

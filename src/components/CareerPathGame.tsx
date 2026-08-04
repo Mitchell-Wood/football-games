@@ -127,6 +127,21 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
     }
   }
 
+  // Jumps straight to the bonus round: every club plus the nationality/
+  // honours clue, with exactly one guess left. Keeps whatever real guesses
+  // were already made and pads the rest with "Skipped", so it lands on the
+  // same final-guess state skipGuess() would eventually reach one club at a
+  // time — this never ends the game itself, since a reveal isn't a guess.
+  function revealAll() {
+    if (status !== "playing") return;
+    const remaining = maxGuesses - 1 - guesses.length;
+    if (remaining <= 0) return;
+
+    setGuesses([...guesses, ...Array(remaining).fill("Skipped")]);
+    setGuess("");
+    setShowSuggestions(false);
+  }
+
   function playAgain() {
     window.location.reload();
   }
@@ -248,6 +263,15 @@ export default function CareerPathGame({ answer }: { answer: Player }) {
           >
             Skip
           </button>
+          {!bonusRevealed && (
+            <button
+              type="button"
+              onClick={revealAll}
+              className="rounded-md border border-black/15 dark:border-white/20 px-4 py-2 font-medium"
+            >
+              Reveal All
+            </button>
+          )}
         </form>
       )}
 
