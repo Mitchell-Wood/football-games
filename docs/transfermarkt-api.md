@@ -70,46 +70,79 @@ works; this isn't a Docker or networking problem on our end.
 Player data flows through `src/lib/data-source.ts`. The game only calls
 `fetchRandomPlayer()` — it never imports the mock dataset directly.
 
-`data-source.ts` already implements the live path: when `DATA_SOURCE=transfermarkt`
-is set, `fetchRandomPlayer()` first picks a random *season* between 1980
-(`OLDEST_SEASON_YEAR`) and the current year, then branches on it:
+When `DATA_SOURCE=transfermarkt` is set, `fetchRandomPlayer()` picks a
+random entry from `src/data/top-players.ts` (`topPlayers`, a static list of
+`{id, name}` transfermarkt IDs) and calls `fetchPlayerDetails(id)` — the
+same function used for every other part of the pipeline (career path,
+Wikipedia stats, achievements). If that fails (a transient scrape error),
+it retries with a different random entry, up to 5 attempts, before falling
+back to the mock dataset.
 
-**2004 onward** (`MARKET_VALUE_SEASON_YEAR`) — roughly when Transfermarkt's
-market-value data starts existing at all:
+### How `top-players.ts` was built
 
-1. a random competition from the big five leagues
-   (`src/lib/transfermarkt.ts` → `TOP_LEAGUE_COMPETITION_IDS`: Premier
-   League `GB1`, LaLiga `ES1`, Serie A `IT1`, Bundesliga `L1`, Ligue 1
-   `FR1`), scoped to that season (so a club that's since been
-   promoted/relegated is only in the pool for seasons it actually played);
-2. a random club in it;
-3. from that club's squad that season, a random player among the **top 15
-   by market value at the time** (`GUESSABLE_SQUAD_SIZE`) — a full squad is
-   ~25-40 names including fringe/reserve players nobody would recognise,
-   and market value ranked *within* the squad is an era-robust "was a
-   first-team regular" proxy (avoids the trap of a fixed cutoff — €30m was
-   a superstar in 2007, a squad player today).
+Earlier versions picked the answer live each request — browse a random
+club's current squad, rank by market value, retry with a different squad
+if needed. That approach is gone; it let through players who are good
+enough to be *valuable* without being *recognisable*, since "top of this
+squad" is relative to the squad, not to football fame generally (tuning
+knobs like `GUESSABLE_SQUAD_SIZE` and a minimum-age filter narrowed it, but
+a pick like "best player on an unglamorous mid-table club" could still
+clear that bar).
 
-**Before 2004** — no market-value data exists to rank by (verified: even
-the dedicated `/players/{id}/market_value` endpoint returns an empty
-history for a player whose career predates this). Trophy count
-(`/players/{id}/achievements`) is the fallback proxy instead, but it only
-works if the club itself was competitive that season — a fringe player at
-a mid-table club scores 0 same as everyone else on that roster, so "most
-decorated of a random sample" can still land on a nobody. So for these
-seasons, club selection is restricted to `HISTORICAL_POWERHOUSE_CLUBS` — a
-short hardcoded list of ~15 clubs (Man Utd, Liverpool, Arsenal, Real
-Madrid, Barcelona, Bayern, AC Milan, Juventus, etc.) that were realistically
-title-contending across most of the last ~45 years — instead of any
-current big-five club. Then: probe a random sample of 6 squad members'
-achievement counts, and draw from the top 3.
+The replacement: a **pre-vetted list of ~500 players ranked by genuine
+notability**, generated once (not per-request) and checked into the repo.
+The signal is Wikidata's `sitelinks` count — how many different-language
+Wikipedia articles exist about a person. Unlike market value it doesn't
+decay when someone retires, and unlike squad-relative ranking it's an
+absolute measure of "how known is this person," not "how known relative to
+their own teammates."
 
-If any step comes back empty the whole pick is retried (up to 5 attempts)
-with fresh random choices. Competition→clubs and club→squad lookups are
-cached in memory per server process, keyed by season, since neither changes
-within a session; achievement scores are cached per player. If live
-selection fails entirely, it falls back to a random pick from the mock
-dataset rather than breaking the page.
+Generation process (not part of the running app — a one-off script, not
+checked in, since it's not something that needs to run again until the
+list is due for a refresh):
+
+1. SPARQL query for people with occupation "association football player"
+   (`wdt:P106 wd:Q937857`), ordered by `wikibase:sitelinks` descending,
+   padded to ~1000 candidates (some will fail later steps).
+2. That occupation property alone has false positives — Albert Camus, Sean
+   Connery, and a former Hungarian PM all came back, apparently tagged as
+   having played football at some minor/youth level. Filtered by requiring
+   real club membership (`wdt:P54` pointing to something
+   `wdt:P31/wdt:P279*` an association football club), batched via
+   `VALUES` in groups of ~50 — doing this as one global join across all of
+   Wikidata timed out the public SPARQL endpoint; scoping it to small
+   explicit ID batches keeps each query under a second.
+3. Batched fetch of exact (day-precision) date of birth per candidate,
+   same `VALUES`-batching approach, using
+   `p:P569/psv:P569 ?v. ?v wikibase:timeValue ?dob; wikibase:timePrecision ?precision.`
+   to get precision (a plain `wdt:P569` triple doesn't expose it) —
+   candidates without day precision are dropped, since the DOB-matching
+   this app relies on elsewhere needs an exact date.
+4. For the remaining candidates, in descending fame order: search
+   transfermarkt-api by name, fetch each result's profile, and accept the
+   first one whose profile description's DOB matches — stopping once 500
+   are resolved. This is the same name+DOB identity check used everywhere
+   else in this app (see below), just run at build time instead of per
+   game load.
+
+Of ~620 candidates attempted, 500 resolved automatically; 123 failed. Most
+of the failures turned out to be some of the most important names to have
+— Maradona, Pelé, Cruyff, Beckenbauer, Puskás, Eusébio, Gerd Müller — not
+because they're hard to find, but because of two separate upstream quirks:
+transfermarkt-api's profile endpoint throws a plain `500 Internal Server
+Error` for at least some deceased players (Maradona), and some profiles
+that do load are missing the birthdate line entirely (Raúl's description
+has no `* DD/MM/YYYY` at all), which the DOB match depends on. Neither is
+something retrying fixes. Rather than lose the sport's most iconic names to
+a scraper formatting quirk, ~23 of these were resolved manually (searched,
+identity confirmed by name + nationality + club history) and appended —
+`src/data/top-players.ts` is 523 entries, not a round 500.
+
+Output is `{id, name}[]`, sorted by sitelinks (manual additions appended
+after). Everything else (nationality, career path, stats, achievements) is
+re-derived from the transfermarkt ID at request time by the existing
+`fetchPlayerDetails()`, so the list doesn't go stale the way cached
+career data would.
 
 Guess suggestions (the autocomplete dropdown) are separate: they search
 Transfermarkt's full player database via `/players/search/{name}` — not
@@ -191,15 +224,20 @@ TRANSFERMARKT_API_URL=http://localhost:8000
 
 Known limitations:
 
-- Pre-2004 seasons only draw from the 15 curated powerhouse clubs, not the
-  full big-five pool — a legend who spent that era at a club outside that
-  list won't come up.
-- The answer pool only reaches back to 1980 (`OLDEST_SEASON_YEAR`).
+- The answer pool is fixed at ~500 entries until `top-players.ts` is
+  regenerated — no built-in freshness (a newly-breakout star won't appear
+  until the list is rebuilt by hand), though the underlying career/stats
+  data is still fetched live each time, so an active player's data stays
+  current even though the *pool membership* doesn't.
+- Sitelink count is a real notability signal but not a perfect one — it
+  skews toward players with a long Wikipedia editing history (older
+  legends, or players popular enough to have dozens of language editions),
+  so a very recent breakout star could be underrepresented relative to how
+  well-known they've actually become. It also isn't purely "global fame" —
+  a handful of entries are players who are much better known within one
+  footballing culture than worldwide (verified as correct identities, not
+  matching bugs, just a real quirk of the signal).
 - Loan spells aren't distinguished from permanent transfers in `careerPath`.
-- Both fame filters are proxies, not guarantees — a very young player who
-  was already valuable, or a fringe player who happened to be on a
-  trophy-winning squad, can still slip in with a short or unremarkable
-  career path.
 - Appearances/goals are best-effort, not guaranteed per stop:
   - No match at all if the player isn't on Wikidata (no article, or no
     English Wikipedia sitelink), or their Wikidata DOB only has year/month

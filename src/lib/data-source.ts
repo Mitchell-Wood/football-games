@@ -1,15 +1,7 @@
 import type { CareerStop, Player } from "@/lib/types";
 import { players as mockPlayers } from "@/data/players";
-import {
-  USE_LIVE_DATA,
-  API_BASE_URL,
-  TOP_LEAGUE_COMPETITION_IDS,
-  getCompetitionClubs,
-  getClubSquad,
-  getPlayerAchievements,
-  type ClubRef,
-  type SquadPlayerRef,
-} from "@/lib/transfermarkt";
+import { topPlayers } from "@/data/top-players";
+import { API_BASE_URL, USE_LIVE_DATA, getPlayerAchievements } from "@/lib/transfermarkt";
 import { findWikipediaTitle } from "@/lib/wikidata";
 import { fetchWikipediaSeniorCareer, type InfoboxStint } from "@/lib/wikipedia";
 import { foldDiacritics } from "@/lib/text-match";
@@ -21,9 +13,10 @@ import { foldDiacritics } from "@/lib/text-match";
  * transfermarkt-api-backed source later without touching game code.
  *
  * Set DATA_SOURCE=transfermarkt (and optionally TRANSFERMARKT_API_URL,
- * default http://localhost:8000) to pick a random big-five-league squad
- * player — past or present — instead of the mock dataset — see
- * docs/transfermarkt-api.md.
+ * default http://localhost:8000) to pick a random player from
+ * src/data/top-players.json — see docs/transfermarkt-api.md for how that
+ * list was built and why (squad-sampling by market value let through
+ * plenty of valuable-but-obscure players).
  */
 
 type TransfermarktProfile = {
@@ -216,176 +209,21 @@ function pickRandom<T>(items: T[]): T | undefined {
   return items[Math.floor(Math.random() * items.length)];
 }
 
-// Fisher-Yates-ish partial shuffle: pick `count` distinct random items.
-function pickRandomSample<T>(items: T[], count: number): T[] {
-  const pool = [...items];
-  const sample: T[] = [];
-  while (pool.length > 0 && sample.length < count) {
-    const index = Math.floor(Math.random() * pool.length);
-    sample.push(pool.splice(index, 1)[0]);
-  }
-  return sample;
-}
-
-// How far back random seasons can go. Squad and competition-membership data
-// stays reliable this far back; older than this gets sparse.
-const OLDEST_SEASON_YEAR = 1980;
-
-// Transfermarkt only has market-value data from roughly this season onward
-// (verified: a player whose whole career predates this has an empty
-// market-value history even on the dedicated endpoint). Seasons at or after
-// this use the value-based fame filter; older ones fall back to trophies.
-const MARKET_VALUE_SEASON_YEAR = 2004;
-
-function pickRandomSeasonYear(): number {
-  const maxYear = new Date().getFullYear();
-  return OLDEST_SEASON_YEAR + Math.floor(Math.random() * (maxYear - OLDEST_SEASON_YEAR + 1));
-}
-
-// A squad snapshot has ~25-40 players including fringe/reserve names
-// nobody will recognise. Market value (as of that season) is a decent,
-// era-robust fame proxy for seasons that have it. Started at 15 (roughly
-// "top half of the squad") but that still let through squad-depth players
-// who are good enough to be valuable without being recognisable — tightened
-// to the players who were genuinely first-choice.
-const GUESSABLE_SQUAD_SIZE = 8;
-
-// A young player can carry a big valuation on potential alone, well before
-// they're actually known — excluded from the market-value ranking so a
-// highly-rated teenager doesn't crowd out established first-teamers.
-const MIN_GUESSABLE_AGE = 20;
-
-// Pre-2004 seasons have no market value at all, so instead: probe a random
-// sample of the squad for trophy count (achievements endpoint goes back
-// decades) and draw from whoever scored highest in that sample. Sample
-// size capped since each probe is its own scrape request; the final draw
-// is narrower than the sample so it's the clearly-most-decorated, not just
-// above-average.
-const ACHIEVEMENT_SAMPLE_SIZE = 8;
-const ACHIEVEMENT_GUESSABLE_SIZE = 2;
-
-// Trophy count only means something if the club was actually competitive
-// that season — a random member of a mid-table club's squad usually has
-// zero achievements same as a random big-club fringe player, so "most
-// decorated of a sample" can still land on a nobody. Restricting old-era
-// picks to clubs that were realistically title-contending across most of
-// the last ~45 years keeps the achievement filter meaningful, and skips
-// the competition->clubs lookup entirely (one less scrape per attempt).
-const HISTORICAL_POWERHOUSE_CLUBS: ClubRef[] = [
-  { id: "985", name: "Manchester United" },
-  { id: "31", name: "Liverpool FC" },
-  { id: "11", name: "Arsenal FC" },
-  { id: "631", name: "Chelsea FC" },
-  { id: "418", name: "Real Madrid" },
-  { id: "131", name: "FC Barcelona" },
-  { id: "13", name: "Atlético de Madrid" },
-  { id: "506", name: "Juventus FC" },
-  { id: "5", name: "AC Milan" },
-  { id: "46", name: "Inter Milan" },
-  { id: "27", name: "Bayern Munich" },
-  { id: "16", name: "Borussia Dortmund" },
-  { id: "583", name: "Paris Saint-Germain" },
-  { id: "244", name: "Olympique Marseille" },
-  { id: "1041", name: "Olympique Lyon" },
-];
-
-const achievementScoreCache = new Map<string, Promise<number>>();
-
-function cachedAchievementScore(playerId: string): Promise<number> {
-  let cached = achievementScoreCache.get(playerId);
-  if (!cached) {
-    cached = getPlayerAchievements(playerId).then((achievements) =>
-      achievements.reduce((sum, a) => sum + a.count, 0)
-    );
-    achievementScoreCache.set(playerId, cached);
-  }
-  // Same reasoning as cachedCareerStints: don't let a transient failure
-  // permanently zero out this player's fame score for the rest of the
-  // server process's lifetime.
-  return cached.catch((err) => {
-    achievementScoreCache.delete(playerId);
-    console.error(`Achievement score lookup failed for player ${playerId}:`, err);
-    return 0;
-  });
-}
-
-async function guessablePlayers(
-  squad: SquadPlayerRef[],
-  seasonYear: number
-): Promise<SquadPlayerRef[]> {
-  if (seasonYear >= MARKET_VALUE_SEASON_YEAR) {
-    const establishedPlayers = squad.filter(
-      (p) => p.age === undefined || p.age >= MIN_GUESSABLE_AGE
-    );
-    const pool = establishedPlayers.length > 0 ? establishedPlayers : squad;
-    return [...pool]
-      .sort((a, b) => (b.marketValue ?? 0) - (a.marketValue ?? 0))
-      .slice(0, GUESSABLE_SQUAD_SIZE);
-  }
-
-  const sample = pickRandomSample(squad, ACHIEVEMENT_SAMPLE_SIZE);
-  const scored = await Promise.all(
-    sample.map(async (player) => ({ player, score: await cachedAchievementScore(player.id) }))
-  );
-  return scored
-    .sort((a, b) => b.score - a.score)
-    .slice(0, ACHIEVEMENT_GUESSABLE_SIZE)
-    .map((s) => s.player);
-}
-
-// Competition->clubs and club->squad are both keyed by season since squad
-// membership (and even which clubs are in the competition) changes year to
-// year, but are otherwise stable, so cache them in memory.
-const clubsByCompetitionSeason = new Map<string, Promise<ClubRef[]>>();
-const squadByClubSeason = new Map<string, Promise<SquadPlayerRef[]>>();
-
-function cachedCompetitionClubs(competitionId: string, seasonYear: number): Promise<ClubRef[]> {
-  const key = `${competitionId}:${seasonYear}`;
-  let cached = clubsByCompetitionSeason.get(key);
-  if (!cached) {
-    cached = getCompetitionClubs(competitionId, seasonYear).catch(() => []);
-    clubsByCompetitionSeason.set(key, cached);
-  }
-  return cached;
-}
-
-function cachedClubSquad(clubId: string, seasonYear: number): Promise<SquadPlayerRef[]> {
-  const key = `${clubId}:${seasonYear}`;
-  let cached = squadByClubSeason.get(key);
-  if (!cached) {
-    cached = getClubSquad(clubId, seasonYear).catch(() => []);
-    squadByClubSeason.set(key, cached);
-  }
-  return cached;
-}
-
 const MAX_RANDOM_ATTEMPTS = 5;
 
-async function pickRandomClub(seasonYear: number): Promise<ClubRef | undefined> {
-  if (seasonYear < MARKET_VALUE_SEASON_YEAR) {
-    return pickRandom(HISTORICAL_POWERHOUSE_CLUBS);
-  }
-  const competitionId = pickRandom([...TOP_LEAGUE_COMPETITION_IDS]);
-  if (!competitionId) return undefined;
-  const clubs = await cachedCompetitionClubs(competitionId, seasonYear);
-  return pickRandom(clubs);
-}
-
+// The answer pool is a pre-vetted list of ~500 footballers ranked by real
+// notability (Wikidata sitelink count — how many different-language
+// Wikipedia articles exist about them — verified to have an actual club
+// career, cross-checked against transfermarkt-api). See
+// docs/transfermarkt-api.md for how it was built and why: squad-based
+// sampling (rank a club's current squad by market value) let through
+// players who are good enough to be valuable without being recognisable,
+// since that's relative to their own squad, not to football fame generally.
 async function fetchRandomLivePlayer(): Promise<Player | null> {
   for (let attempt = 0; attempt < MAX_RANDOM_ATTEMPTS; attempt++) {
-    const seasonYear = pickRandomSeasonYear();
-
-    const club = await pickRandomClub(seasonYear);
-    if (!club) continue;
-
-    const squad = await cachedClubSquad(club.id, seasonYear);
-    if (squad.length === 0) continue;
-
-    const candidates = await guessablePlayers(squad, seasonYear);
-    const squadPlayer = pickRandom(candidates);
-    if (!squadPlayer) continue;
-
-    const player = await fetchPlayerDetails(squadPlayer.id);
+    const candidate = pickRandom(topPlayers);
+    if (!candidate) return null;
+    const player = await fetchPlayerDetails(candidate.id);
     if (player) return player;
   }
   return null;
