@@ -7,9 +7,40 @@
 // with (mostly deceased players — e.g. Maradona's profile endpoint 500s
 // outright — or profiles missing the description text the DOB match relies
 // on, e.g. Raúl's). See docs/transfermarkt-api.md for how this was built.
+//
+// The manually-verified block below is placed first, not appended at the
+// end — it was originally appended out of fame order (a bug: several of
+// football's most recognizable names, e.g. Pelé, Maradona, Cruyff, ended up
+// ranked alongside genuinely obscure players purely because of where they
+// landed in the array). Position in this list is used elsewhere (Rarity
+// Duel) as a rarity-tier signal, so order has to reflect real fame, not
+// just "resolved automatically vs. resolved by hand".
 export type TopPlayer = { id: string; name: string };
 
 export const topPlayers: TopPlayer[] = [
+  { id: "8024", name: "Diego Maradona" },
+  { id: "7349", name: "Raúl" },
+  { id: "8021", name: "Johan Cruyff" },
+  { id: "72347", name: "Franz Beckenbauer" },
+  { id: "17121", name: "Pelé" },
+  { id: "103092", name: "Ferenc Puskás" },
+  { id: "22068", name: "Franck Ribéry" },
+  { id: "89230", name: "Eusébio" },
+  { id: "35604", name: "Gerd Müller" },
+  { id: "135778", name: "Alfredo di Stéfano" },
+  { id: "174987", name: "Lev Yashin" },
+  { id: "174986", name: "George Best" },
+  { id: "206", name: "Oliver Kahn" },
+  { id: "174874", name: "Sir Bobby Charlton" },
+  { id: "151263", name: "Mané Garrincha" },
+  { id: "63", name: "Michael Ballack" },
+  { id: "1397", name: "Michael Owen" },
+  { id: "16980", name: "Jürgen Klinsmann" },
+  { id: "2514", name: "Bastian Schweinsteiger" },
+  { id: "74842", name: "Mario Götze" },
+  { id: "34572", name: "Mario Mandžukić" },
+  { id: "39153", name: "Gonzalo Higuaín" },
+  { id: "581678", name: "Jude Bellingham" },
   { id: "28003", name: "Lionel Messi" },
   { id: "8198", name: "Cristiano Ronaldo" },
   { id: "68290", name: "Neymar" },
@@ -510,27 +541,4 @@ export const topPlayers: TopPlayer[] = [
   { id: "31353", name: "Masashi Oguro" },
   { id: "61888", name: "Kengo Nakamura" },
   { id: "6755", name: "Atsushi Yanagisawa" },
-  { id: "8024", name: "Diego Maradona" },
-  { id: "7349", name: "Raúl" },
-  { id: "8021", name: "Johan Cruyff" },
-  { id: "72347", name: "Franz Beckenbauer" },
-  { id: "17121", name: "Pelé" },
-  { id: "103092", name: "Ferenc Puskás" },
-  { id: "22068", name: "Franck Ribéry" },
-  { id: "89230", name: "Eusébio" },
-  { id: "35604", name: "Gerd Müller" },
-  { id: "135778", name: "Alfredo di Stéfano" },
-  { id: "174987", name: "Lev Yashin" },
-  { id: "174986", name: "George Best" },
-  { id: "206", name: "Oliver Kahn" },
-  { id: "174874", name: "Sir Bobby Charlton" },
-  { id: "151263", name: "Mané Garrincha" },
-  { id: "63", name: "Michael Ballack" },
-  { id: "1397", name: "Michael Owen" },
-  { id: "16980", name: "Jürgen Klinsmann" },
-  { id: "2514", name: "Bastian Schweinsteiger" },
-  { id: "74842", name: "Mario Götze" },
-  { id: "34572", name: "Mario Mandžukić" },
-  { id: "39153", name: "Gonzalo Higuaín" },
-  { id: "581678", name: "Jude Bellingham" },
 ];
