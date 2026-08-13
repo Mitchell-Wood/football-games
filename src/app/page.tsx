@@ -27,6 +27,12 @@ const games: Game[] = [
     description: "Head-to-head. Claim and steal squares by naming rarer and rarer players.",
     available: true,
   },
+  {
+    name: "Football Darts",
+    href: "/football-darts",
+    description: "Real darts scoring. Name a player and their real stats become your throw.",
+    available: true,
+  },
 ];
 
 export default function Home() {

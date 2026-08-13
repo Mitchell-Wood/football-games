@@ -44,6 +44,9 @@ export default function RootLayout({
               <Link href="/rarity-duel" className="hover:text-current">
                 Rarity Duel
               </Link>
+              <Link href="/football-darts" className="hover:text-current">
+                Football Darts
+              </Link>
             </nav>
           </div>
         </header>
