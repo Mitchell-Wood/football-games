@@ -21,7 +21,9 @@ export default function FootballDartsGame({ categoryPool }: { categoryPool: Dart
 
   const [remaining, setRemaining] = useState<Record<Owner, number>>({ P1: DEFAULT_START, P2: DEFAULT_START });
   const [currentPlayer, setCurrentPlayer] = useState<Owner>("P1");
-  const [category, setCategory] = useState<DartsCategory>(() => pickRandomCategory(categoryPool));
+  // Drawn once per game, not re-rolled each turn — both players answer the
+  // same category until someone checks out.
+  const [category] = useState<DartsCategory>(() => pickRandomCategory(categoryPool));
   const [stat, setStat] = useState<Stat>("appearances");
 
   const [usedNames, setUsedNames] = useState<string[]>([]);
@@ -38,7 +40,6 @@ export default function FootballDartsGame({ categoryPool }: { categoryPool: Dart
 
   function nextTurn() {
     setCurrentPlayer((p) => (p === "P1" ? "P2" : "P1"));
-    setCategory(pickRandomCategory(categoryPool));
     setGuess("");
   }
 
