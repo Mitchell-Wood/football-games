@@ -21,6 +21,12 @@ const games: Game[] = [
     description: "Guess the player from their photo, which sharpens with every guess.",
     available: true,
   },
+  {
+    name: "Rarity Duel",
+    href: "/rarity-duel",
+    description: "Head-to-head. Claim and steal squares by naming rarer and rarer players.",
+    available: true,
+  },
 ];
 
 export default function Home() {
