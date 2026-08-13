@@ -80,8 +80,16 @@ async function fetchRandomLivePlayer(): Promise<Player | null> {
 
 export async function fetchRandomPlayer(): Promise<Player> {
   if (USE_LIVE_DATA) {
-    const live = await fetchRandomLivePlayer();
-    if (live) return live;
+    try {
+      const live = await fetchRandomLivePlayer();
+      if (live) return live;
+    } catch (err) {
+      // A DB failure (e.g. DATABASE_URL misconfigured) should degrade to
+      // mock data, not crash the page — same resilience contract this
+      // function has always had, just against a database now instead of
+      // live transfermarkt-api/Wikipedia calls.
+      console.error("fetchRandomLivePlayer failed:", err);
+    }
   }
   return mockPlayers[Math.floor(Math.random() * mockPlayers.length)];
 }
@@ -104,8 +112,12 @@ async function fetchRandomLivePlayerPhoto(): Promise<PhotoPlayer | null> {
 
 export async function fetchRandomPlayerPhoto(): Promise<PhotoPlayer> {
   if (USE_LIVE_DATA) {
-    const live = await fetchRandomLivePlayerPhoto();
-    if (live) return live;
+    try {
+      const live = await fetchRandomLivePlayerPhoto();
+      if (live) return live;
+    } catch (err) {
+      console.error("fetchRandomLivePlayerPhoto failed:", err);
+    }
   }
   return mockPhotoPlayers[Math.floor(Math.random() * mockPhotoPlayers.length)];
 }
