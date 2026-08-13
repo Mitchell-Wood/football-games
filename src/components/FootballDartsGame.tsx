@@ -14,6 +14,9 @@ function pickRandomCategory(pool: DartsCategory[]): DartsCategory {
   return pool[Math.floor(Math.random() * pool.length)];
 }
 
+const RANDOM_OPTION = "random";
+const categoryKey = (c: DartsCategory) => `${c.type}:${c.id}`;
+
 export default function FootballDartsGame({ categoryPool }: { categoryPool: DartsCategory[] }) {
   const [phase, setPhase] = useState<"setup" | "playing" | "finished">("setup");
   const [p1Start, setP1Start] = useState(DEFAULT_START);
@@ -21,9 +24,10 @@ export default function FootballDartsGame({ categoryPool }: { categoryPool: Dart
 
   const [remaining, setRemaining] = useState<Record<Owner, number>>({ P1: DEFAULT_START, P2: DEFAULT_START });
   const [currentPlayer, setCurrentPlayer] = useState<Owner>("P1");
-  // Drawn once per game, not re-rolled each turn — both players answer the
-  // same category until someone checks out.
-  const [category] = useState<DartsCategory>(() => pickRandomCategory(categoryPool));
+  const [categoryChoice, setCategoryChoice] = useState(RANDOM_OPTION);
+  // Locked in once the game starts, not re-rolled each turn — both players
+  // answer the same category until someone checks out.
+  const [category, setCategory] = useState<DartsCategory>(() => pickRandomCategory(categoryPool));
   const [stat, setStat] = useState<Stat>("appearances");
 
   const [usedNames, setUsedNames] = useState<string[]>([]);
@@ -33,7 +37,20 @@ export default function FootballDartsGame({ categoryPool }: { categoryPool: Dart
   const [winner, setWinner] = useState<Owner | null>(null);
   const [checkoutScore, setCheckoutScore] = useState<number | null>(null);
 
+  const leagueOptions = categoryPool
+    .filter((c) => c.type === "league")
+    .sort((a, b) => a.label.localeCompare(b.label));
+  const clubOptions = categoryPool
+    .filter((c) => c.type === "club")
+    .sort((a, b) => a.label.localeCompare(b.label));
+
   function startGame() {
+    if (categoryChoice !== RANDOM_OPTION) {
+      const chosen = categoryPool.find((c) => categoryKey(c) === categoryChoice);
+      if (chosen) setCategory(chosen);
+    } else {
+      setCategory(pickRandomCategory(categoryPool));
+    }
     setRemaining({ P1: p1Start, P2: p2Start });
     setPhase("playing");
   }
@@ -138,6 +155,31 @@ export default function FootballDartsGame({ categoryPool }: { categoryPool: Dart
             />
           </div>
         </div>
+        <label className="block text-sm font-medium mb-2" htmlFor="category-choice">
+          Category
+        </label>
+        <select
+          id="category-choice"
+          value={categoryChoice}
+          onChange={(e) => setCategoryChoice(e.target.value)}
+          className="w-full rounded-md border border-black/15 dark:border-white/20 bg-transparent px-3 py-2 outline-none focus:border-black/40 dark:focus:border-white/40 mb-6"
+        >
+          <option value={RANDOM_OPTION}>Random</option>
+          <optgroup label="Leagues">
+            {leagueOptions.map((c) => (
+              <option key={categoryKey(c)} value={categoryKey(c)}>
+                {c.label}
+              </option>
+            ))}
+          </optgroup>
+          <optgroup label="Clubs">
+            {clubOptions.map((c) => (
+              <option key={categoryKey(c)} value={categoryKey(c)}>
+                {c.label}
+              </option>
+            ))}
+          </optgroup>
+        </select>
         <button
           onClick={startGame}
           className="rounded-md bg-foreground text-background px-4 py-2 font-medium"
