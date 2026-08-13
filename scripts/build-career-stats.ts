@@ -1,11 +1,10 @@
 // Builds real per-club season/appearances/goals data and trophy win counts
-// for tier 1-2 players (~6,666 of the 16,661), so Career Path can render
-// entirely from the database instead of live-fetching on every game load.
+// for every player, so Career Path (and now Football Darts, whose scoring
+// depends on real per-club appearances/goals) can render entirely from the
+// database. Originally scoped to just tier 1-2 (~6,666) since Career Path
+// only needed guessable, famous answers — widened to the full pool since
+// Football Darts wants real stats for everyone, not just the famous ones.
 // Run with `npm run build:career-stats`.
-//
-// Scoped to tier 1-2 deliberately — Career Path needs guessable, famous
-// answers (same reasoning the original curated-523 pool existed for), so
-// there's no need to run this slow pipeline across the full 16,661.
 //
 // Same shape as scripts/compute-fame.ts: the bottleneck is Wikidata
 // identity matching (findWikipediaTitle), which needs the same careful
@@ -22,7 +21,7 @@
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
-import { and, eq, inArray, isNotNull } from "drizzle-orm";
+import { and, eq, isNotNull } from "drizzle-orm";
 import { getDb } from "../src/lib/db/client";
 import { players, playerStints, playerTrophies, playerTeams, teams } from "../src/lib/db/schema";
 import { findWikipediaTitle } from "../src/lib/wikidata";
@@ -101,15 +100,9 @@ async function main() {
   const pending = await db
     .select({ id: players.id, name: players.name, dateOfBirth: players.dateOfBirth })
     .from(players)
-    .where(
-      and(
-        inArray(players.rarityTier, [1, 2]),
-        eq(players.careerStatsFetched, false),
-        isNotNull(players.dateOfBirth)
-      )
-    );
+    .where(and(eq(players.careerStatsFetched, false), isNotNull(players.dateOfBirth)));
 
-  console.log(`${pending.length} tier 1-2 players need career-stats built.`);
+  console.log(`${pending.length} players need career-stats built.`);
 
   let done = 0;
   let failed = 0;
