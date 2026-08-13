@@ -1,164 +1,168 @@
 // The 12 legends handled here all hit the same transfermarkt-api quirk
 // documented in docs/transfermarkt-api.md: the profile endpoint 500s
 // outright for these specific (mostly deceased) players — confirmed
-// persistent across three separate import runs, not transient. This is
-// the exact same issue that required manually resolving them for
-// src/data/top-players.ts in the first place.
+// persistent across multiple import runs, not transient. This is the same
+// issue that required manually resolving them for src/data/top-players.ts
+// in the first place.
 //
-// Rather than skip them from Rarity Duel entirely (they're some of the
-// most famous footballers ever — exactly who a rarity-tier-1 answer
-// should be), their category tags are hand-entered from well-documented
-// historical fact instead of the live API. Kept deliberately conservative:
-// only unambiguous facts (which clubs, which nationality, World Cup wins)
-// are included. Pre-1992 European Cup wins are NOT tagged as "UEFA
-// Champions League" even though it's the same competition renamed — with
-// no live API response to check against for these players, there's no way
-// to confirm how the automated pipeline would have actually titled it for
-// consistency with everyone else's data, so it's left out rather than
-// guessed. Run with `npm run import:legends`.
+// Category tags are hand-entered from well-documented historical fact
+// instead of the live API, deliberately conservative (nationality, real
+// clubs, World Cup wins only — no pre-1992 European Cup wins, since
+// there's no live achievements response to check exact title wording
+// against for these players). Dates of birth are also hardcoded
+// (well-documented public facts) so these 12 can flow through the same
+// Wikidata sitelinks fame ranking as everyone else instead of needing a
+// special-cased tier. Run with `npm run import:legends`.
 import { config } from "dotenv";
 config({ path: ".env.local" });
 
 import { getDb } from "../src/lib/db/client";
-import { players, playerCategories } from "../src/lib/db/schema";
+import { players, playerTeams, playerTrophies, playerNationalities } from "../src/lib/db/schema";
+import { trophies, nationalities } from "../src/data/categories";
+import { seedLookupTables, upsertTeamSeen, existingPlayerIds } from "./lib/db-helpers";
 
-type LegendCategory = { categoryType: string; categoryValue: string };
+function trophyId(name: string): string {
+  const t = trophies.find((t) => t.name === name);
+  if (!t) throw new Error(`Unknown trophy: ${name}`);
+  return t.id;
+}
+function nationalityId(name: string): string {
+  const n = nationalities.find((n) => n.name === name);
+  if (!n) throw new Error(`Unknown nationality: ${name}`);
+  return n.id;
+}
+
 type Legend = {
   id: string;
   name: string;
-  fameRank: number;
-  nationality: string; // primary, for the players.nationality column
-  categories: LegendCategory[];
+  dateOfBirth: string; // YYYY-MM-DD
+  nationalityDisplay: string;
+  nationalityIds: string[];
+  trophyIds: string[];
+  teams: { id: string; name: string }[];
 };
-
-const club = (name: string, league: string): LegendCategory[] => [
-  { categoryType: "club", categoryValue: name },
-  { categoryType: "league", categoryValue: league },
-];
 
 const legends: Legend[] = [
   {
     id: "8024",
     name: "Diego Maradona",
-    fameRank: 0,
-    nationality: "Argentina",
-    categories: [
-      { categoryType: "nationality", categoryValue: "Argentina" },
-      { categoryType: "trophy", categoryValue: "World Cup" },
-      ...club("Barcelona", "La Liga"),
-      ...club("Napoli", "Serie A"),
+    dateOfBirth: "1960-10-30",
+    nationalityDisplay: "Argentina",
+    nationalityIds: [nationalityId("Argentina")],
+    trophyIds: [trophyId("World Cup")],
+    teams: [
+      { id: "131", name: "Barcelona" },
+      { id: "6195", name: "Napoli" },
     ],
   },
   {
     id: "17121",
     name: "Pelé",
-    fameRank: 4,
-    nationality: "Brazil",
-    categories: [
-      { categoryType: "nationality", categoryValue: "Brazil" },
-      { categoryType: "trophy", categoryValue: "World Cup" },
-    ],
+    dateOfBirth: "1940-10-23",
+    nationalityDisplay: "Brazil",
+    nationalityIds: [nationalityId("Brazil")],
+    trophyIds: [trophyId("World Cup")],
+    teams: [],
   },
   {
     id: "8021",
     name: "Johan Cruyff",
-    fameRank: 2,
-    nationality: "Netherlands",
-    categories: [
-      { categoryType: "nationality", categoryValue: "Netherlands" },
-      ...club("Ajax", "Eredivisie"),
-      ...club("Barcelona", "La Liga"),
+    dateOfBirth: "1947-04-25",
+    nationalityDisplay: "Netherlands",
+    nationalityIds: [nationalityId("Netherlands")],
+    trophyIds: [],
+    teams: [
+      { id: "610", name: "Ajax" },
+      { id: "131", name: "Barcelona" },
     ],
   },
   {
     id: "72347",
     name: "Franz Beckenbauer",
-    fameRank: 3,
-    nationality: "Germany",
-    categories: [
-      { categoryType: "nationality", categoryValue: "Germany" },
-      { categoryType: "trophy", categoryValue: "World Cup" },
-      { categoryType: "trophy", categoryValue: "UEFA European Championship" },
-      ...club("Bayern Munich", "Bundesliga"),
-    ],
+    dateOfBirth: "1945-09-11",
+    nationalityDisplay: "Germany",
+    nationalityIds: [nationalityId("Germany")],
+    trophyIds: [trophyId("World Cup"), trophyId("UEFA European Championship")],
+    teams: [{ id: "27", name: "Bayern Munich" }],
   },
   {
     id: "103092",
     name: "Ferenc Puskás",
-    fameRank: 5,
-    nationality: "Unknown", // Hungary isn't in the curated nationality bank
-    categories: [...club("Real Madrid", "La Liga")],
+    dateOfBirth: "1927-04-02",
+    nationalityDisplay: "Unknown", // Hungary isn't in the curated nationality bank
+    nationalityIds: [],
+    trophyIds: [],
+    teams: [{ id: "418", name: "Real Madrid" }],
   },
   {
     id: "35604",
     name: "Gerd Müller",
-    fameRank: 8,
-    nationality: "Germany",
-    categories: [
-      { categoryType: "nationality", categoryValue: "Germany" },
-      { categoryType: "trophy", categoryValue: "World Cup" },
-      ...club("Bayern Munich", "Bundesliga"),
-    ],
+    dateOfBirth: "1945-11-03",
+    nationalityDisplay: "Germany",
+    nationalityIds: [nationalityId("Germany")],
+    trophyIds: [trophyId("World Cup")],
+    teams: [{ id: "27", name: "Bayern Munich" }],
   },
   {
     id: "89230",
     name: "Eusébio",
-    fameRank: 7,
-    nationality: "Portugal",
-    categories: [{ categoryType: "nationality", categoryValue: "Portugal" }, ...club("Benfica", "Primeira Liga")],
+    dateOfBirth: "1942-01-25",
+    nationalityDisplay: "Portugal",
+    nationalityIds: [nationalityId("Portugal")],
+    trophyIds: [],
+    teams: [{ id: "294", name: "Benfica" }],
   },
   {
     id: "135778",
     name: "Alfredo di Stéfano",
-    fameRank: 9,
-    nationality: "Argentina", // dual Argentina/Spain internationally capped for both — historical fact
-    categories: [
-      { categoryType: "nationality", categoryValue: "Argentina" },
-      { categoryType: "nationality", categoryValue: "Spain" },
-      ...club("Real Madrid", "La Liga"),
-    ],
+    dateOfBirth: "1926-07-04",
+    nationalityDisplay: "Argentina", // dual Argentina/Spain internationally capped for both — historical fact
+    nationalityIds: [nationalityId("Argentina"), nationalityId("Spain")],
+    trophyIds: [],
+    teams: [{ id: "418", name: "Real Madrid" }],
   },
   {
     id: "174987",
     name: "Lev Yashin",
-    fameRank: 10,
-    nationality: "Unknown", // Soviet Union isn't in the curated nationality bank; Dynamo Moscow isn't in the club bank
-    categories: [],
+    dateOfBirth: "1929-10-22",
+    nationalityDisplay: "Unknown", // Soviet Union isn't in the curated nationality bank; Dynamo Moscow isn't a tracked club
+    nationalityIds: [],
+    trophyIds: [],
+    teams: [],
   },
   {
     id: "174986",
     name: "George Best",
-    fameRank: 11,
-    nationality: "Unknown", // Northern Ireland isn't in the curated nationality bank
-    categories: [...club("Manchester United", "Premier League")],
+    dateOfBirth: "1946-05-22",
+    nationalityDisplay: "Unknown", // Northern Ireland isn't in the curated nationality bank
+    nationalityIds: [],
+    trophyIds: [],
+    teams: [{ id: "985", name: "Manchester United" }],
   },
   {
     id: "174874",
     name: "Sir Bobby Charlton",
-    fameRank: 13,
-    nationality: "England",
-    categories: [
-      { categoryType: "nationality", categoryValue: "England" },
-      { categoryType: "trophy", categoryValue: "World Cup" },
-      ...club("Manchester United", "Premier League"),
-    ],
+    dateOfBirth: "1937-10-11",
+    nationalityDisplay: "England",
+    nationalityIds: [nationalityId("England")],
+    trophyIds: [trophyId("World Cup")],
+    teams: [{ id: "985", name: "Manchester United" }],
   },
   {
     id: "151263",
     name: "Mané Garrincha",
-    fameRank: 14,
-    nationality: "Brazil",
-    categories: [
-      { categoryType: "nationality", categoryValue: "Brazil" },
-      { categoryType: "trophy", categoryValue: "World Cup" },
-    ],
+    dateOfBirth: "1933-10-28",
+    nationalityDisplay: "Brazil",
+    nationalityIds: [nationalityId("Brazil")],
+    trophyIds: [trophyId("World Cup")],
+    teams: [],
   },
 ];
 
 async function main() {
+  await seedLookupTables();
   const db = getDb();
-  const existing = await db.select({ id: players.id }).from(players);
-  const existingIds = new Set(existing.map((p) => p.id));
+  const existingIds = await existingPlayerIds();
 
   for (const legend of legends) {
     if (existingIds.has(legend.id)) {
@@ -168,17 +172,24 @@ async function main() {
     await db.insert(players).values({
       id: legend.id,
       name: legend.name,
-      nationality: legend.nationality,
+      nationality: legend.nationalityDisplay,
       imageUrl: null,
-      fameRank: legend.fameRank,
-      rarityTier: 1,
+      dateOfBirth: legend.dateOfBirth,
     });
-    if (legend.categories.length > 0) {
-      await db
-        .insert(playerCategories)
-        .values(legend.categories.map((c) => ({ playerId: legend.id, ...c })));
+    for (const team of legend.teams) {
+      await upsertTeamSeen(team.id, team.name);
+      await db.insert(playerTeams).values({ playerId: legend.id, teamId: team.id }).onConflictDoNothing();
     }
-    console.log(`Inserted ${legend.name} (${legend.categories.length} category tags).`);
+    for (const nationalityId_ of legend.nationalityIds) {
+      await db
+        .insert(playerNationalities)
+        .values({ playerId: legend.id, nationalityId: nationalityId_ })
+        .onConflictDoNothing();
+    }
+    for (const trophyId_ of legend.trophyIds) {
+      await db.insert(playerTrophies).values({ playerId: legend.id, trophyId: trophyId_ }).onConflictDoNothing();
+    }
+    console.log(`Inserted ${legend.name} (${legend.teams.length} teams, ${legend.trophyIds.length} trophies).`);
   }
 
   process.exit(0);

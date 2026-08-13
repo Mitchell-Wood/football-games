@@ -10,7 +10,10 @@
     "db:push": "drizzle-kit push",
     "import:players": "tsx scripts/import-players.ts",
     "import:legends": "tsx scripts/import-legends-manual.ts",
-    "backfill:trophies": "tsx scripts/backfill-trophies.ts"
+    "import:squads": "tsx scripts/import-squads.ts",
+    "compute:fame": "tsx scripts/compute-fame.ts",
+    "recompute:tiers": "tsx scripts/recompute-tiers.ts",
+    "build:career-stats": "tsx scripts/build-career-stats.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

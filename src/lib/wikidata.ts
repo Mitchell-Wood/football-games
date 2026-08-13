@@ -16,6 +16,25 @@ const USER_AGENT =
 const WIKIDATA_SEARCH_URL = "https://www.wikidata.org/w/api.php";
 const WIKIDATA_SPARQL_URL = "https://query.wikidata.org/sparql";
 
+// Wikidata's public endpoints rate-limit far more aggressively than
+// transfermarkt-api under sustained load (confirmed live: a batch lookup
+// run hit ~90% 429s at concurrency 3 with no backoff) — this honors
+// Retry-After when given, otherwise backs off exponentially, and retries
+// 502/503 too since those showed up alongside the 429s under load.
+async function fetchWithBackoff(
+  url: string,
+  headers: Record<string, string>,
+  maxRetries = 5
+): Promise<Response> {
+  for (let attempt = 0; ; attempt++) {
+    const res = await fetch(url, { headers });
+    if (res.ok || attempt >= maxRetries || ![429, 502, 503].includes(res.status)) return res;
+    const retryAfter = res.headers.get("retry-after");
+    const delayMs = retryAfter ? Number(retryAfter) * 1000 : 1000 * 2 ** attempt;
+    await new Promise((r) => setTimeout(r, delayMs));
+  }
+}
+
 async function searchWikidataCandidates(name: string): Promise<string[]> {
   const url = new URL(WIKIDATA_SEARCH_URL);
   url.searchParams.set("action", "wbsearchentities");
@@ -25,7 +44,7 @@ async function searchWikidataCandidates(name: string): Promise<string[]> {
   url.searchParams.set("limit", "10");
   url.searchParams.set("format", "json");
 
-  const res = await fetch(url, { headers: { "User-Agent": USER_AGENT } });
+  const res = await fetchWithBackoff(url.toString(), { "User-Agent": USER_AGENT });
   if (!res.ok) {
     throw new Error(`Wikidata search failed: ${res.status} ${(await res.text()).slice(0, 300)}`);
   }
@@ -59,8 +78,9 @@ async function fetchWikipediaTitle(
   const query = buildSitelinkQuery(candidateIds, isoDob);
   const url = `${WIKIDATA_SPARQL_URL}?query=${encodeURIComponent(query)}&format=json`;
 
-  const res = await fetch(url, {
-    headers: { Accept: "application/sparql-results+json", "User-Agent": USER_AGENT },
+  const res = await fetchWithBackoff(url, {
+    Accept: "application/sparql-results+json",
+    "User-Agent": USER_AGENT,
   });
   if (!res.ok) {
     throw new Error(
@@ -83,4 +103,54 @@ async function fetchWikipediaTitle(
 export async function findWikipediaTitle(name: string, isoDob: string): Promise<string | null> {
   const candidateIds = await searchWikidataCandidates(name);
   return fetchWikipediaTitle(candidateIds, isoDob);
+}
+
+type SitelinksBinding = { sitelinks?: { value: string } };
+
+// wikibase:sitelinks is the same fame signal top-players.ts was originally
+// ranked by (how many different-language Wikipedia articles exist about a
+// person) — this is the direct property, no need to join through
+// schema:about/isPartOf the way the article-title lookup above does.
+// ORDER BY DESC + LIMIT 1 picks the more notable of any same-DOB
+// namesakes, rather than an arbitrary one.
+function buildSitelinksCountQuery(candidateIds: string[], isoDob: string): string {
+  const values = candidateIds.map((id) => `wd:${id}`).join(" ");
+  return `
+    SELECT ?person ?sitelinks WHERE {
+      VALUES ?person { ${values} }
+      ?person wdt:P569 ?dob .
+      FILTER(YEAR(?dob) = ${isoDob.slice(0, 4)} && MONTH(?dob) = ${Number(isoDob.slice(5, 7))} && DAY(?dob) = ${Number(isoDob.slice(8, 10))})
+      ?person wikibase:sitelinks ?sitelinks .
+    }
+    ORDER BY DESC(?sitelinks)
+    LIMIT 1
+  `;
+}
+
+async function fetchSitelinksCount(candidateIds: string[], isoDob: string): Promise<number | null> {
+  if (candidateIds.length === 0) return null;
+  const query = buildSitelinksCountQuery(candidateIds, isoDob);
+  const url = `${WIKIDATA_SPARQL_URL}?query=${encodeURIComponent(query)}&format=json`;
+
+  const res = await fetchWithBackoff(url, {
+    Accept: "application/sparql-results+json",
+    "User-Agent": USER_AGENT,
+  });
+  if (!res.ok) {
+    throw new Error(
+      `Wikidata SPARQL query failed: ${res.status} ${(await res.text()).slice(0, 300)}`
+    );
+  }
+  const data = (await res.json()) as { results: { bindings: SitelinksBinding[] } };
+  const raw = data.results.bindings[0]?.sitelinks?.value;
+  return raw !== undefined ? Number(raw) : null;
+}
+
+// Rarity Duel's fame signal — see scripts/compute-fame.ts. Same identity
+// matching (name + exact DOB) as findWikipediaTitle, for the same reason:
+// a wrong match would silently rank one real person's fame under a
+// different person's name.
+export async function findSitelinksCount(name: string, isoDob: string): Promise<number | null> {
+  const candidateIds = await searchWikidataCandidates(name);
+  return fetchSitelinksCount(candidateIds, isoDob);
 }

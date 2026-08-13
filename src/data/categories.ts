@@ -1,71 +1,53 @@
 import { foldDiacritics } from "@/lib/text-match";
 
-// Hand-curated category bank for Rarity Duel — same spirit as
-// src/data/top-players.ts: a small, checked-in list rather than something
-// generated fresh each run, chosen for good coverage across the curated
-// 523-player pool (see docs/transfermarkt-api.md).
-//
-// A real gotcha found while building this: transfermarkt-api's own transfer
-// records use short, inconsistent club names rather than official ones —
-// e.g. "Man Utd" not "Manchester United", "PSG" not "Paris Saint-Germain",
-// sometimes "Milan" and sometimes "AC Milan" for the same club. Plain fuzzy
-// prefix-matching (the tokensSimilar/namesLikelyMatch approach used for
-// Wikipedia club names in data-source.ts) does NOT catch acronyms like
-// "PSG", so every club entry here carries an explicit alias list of the
-// shorthand forms actually observed from the live API, rather than relying
-// on fuzzy matching alone.
+// Category bank for Rarity Duel. As of the normalized-schema rewrite,
+// clubs are matched by real transfermarkt id (transfers[].clubTo.id),
+// not name — transfermarkt-api's own club names are inconsistent ("PSG",
+// "Man Utd", "Milan") in a way plain name/alias matching could never fully
+// cover, but every transfer record carries a stable numeric club id, so
+// there's no need to match on names at all anymore for players imported
+// via the big-5 squad pipeline (scripts/import-squads.ts).
 
 function norm(s: string) {
   return foldDiacritics(s.toLowerCase()).replace(/[^a-z0-9]/g, "");
 }
 
-export type ClubCategory = {
-  name: string; // canonical display value, stored as categoryValue
-  aliases: string[]; // known shorthand forms transfermarkt actually returns
-  league: string; // must match a value below in `leagues`
-};
+function slugify(s: string): string {
+  return foldDiacritics(s.toLowerCase())
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/(^-+|-+$)/g, "");
+}
 
-export const clubs: ClubCategory[] = [
-  // Premier League
-  { name: "Manchester United", aliases: ["Man Utd", "Man United", "Manchester Utd"], league: "Premier League" },
-  { name: "Manchester City", aliases: ["Man City"], league: "Premier League" },
-  { name: "Liverpool", aliases: [], league: "Premier League" },
-  { name: "Chelsea", aliases: [], league: "Premier League" },
-  { name: "Arsenal", aliases: [], league: "Premier League" },
-  { name: "Tottenham Hotspur", aliases: ["Tottenham", "Spurs"], league: "Premier League" },
-  { name: "Everton", aliases: [], league: "Premier League" },
-  { name: "Newcastle United", aliases: ["Newcastle"], league: "Premier League" },
-  { name: "West Ham United", aliases: ["West Ham"], league: "Premier League" },
-  { name: "Leicester City", aliases: ["Leicester"], league: "Premier League" },
-  // La Liga
-  { name: "Real Madrid", aliases: [], league: "La Liga" },
-  { name: "Barcelona", aliases: ["FC Barcelona", "Barça"], league: "La Liga" },
-  { name: "Atlético Madrid", aliases: ["Atlético", "Atletico Madrid", "Atleti"], league: "La Liga" },
-  { name: "Valencia", aliases: [], league: "La Liga" },
-  { name: "Sevilla", aliases: [], league: "La Liga" },
-  // Bundesliga
-  { name: "Bayern Munich", aliases: ["FC Bayern München", "Bayern München", "FC Bayern"], league: "Bundesliga" },
-  { name: "Borussia Dortmund", aliases: ["BVB", "Dortmund"], league: "Bundesliga" },
-  { name: "Schalke 04", aliases: ["Schalke"], league: "Bundesliga" },
-  // Serie A
-  { name: "Juventus", aliases: ["Juve"], league: "Serie A" },
-  { name: "AC Milan", aliases: ["Milan"], league: "Serie A" },
-  { name: "Inter Milan", aliases: ["Inter", "Internazionale", "Inter Milano"], league: "Serie A" },
-  { name: "AS Roma", aliases: ["Roma"], league: "Serie A" },
-  { name: "Napoli", aliases: ["SSC Napoli"], league: "Serie A" },
-  // Ligue 1
-  { name: "Paris Saint-Germain", aliases: ["PSG"], league: "Ligue 1" },
-  { name: "Marseille", aliases: ["Olympique Marseille", "OM"], league: "Ligue 1" },
-  { name: "Monaco", aliases: ["AS Monaco"], league: "Ligue 1" },
-  { name: "Lyon", aliases: ["Olympique Lyonnais", "OL"], league: "Ligue 1" },
-  // Eredivisie
-  { name: "Ajax", aliases: ["AFC Ajax"], league: "Eredivisie" },
-  // Primeira Liga
-  { name: "Porto", aliases: ["FC Porto"], league: "Primeira Liga" },
-  { name: "Benfica", aliases: ["SL Benfica"], league: "Primeira Liga" },
-];
+// The 5 leagues scripts/import-squads.ts pulls full current + historical
+// rosters from. Every club discovered this way is flagged is_category —
+// with ~96 real clubs and deep squads, there's no need for a hand-picked
+// subset the way the old alias-based club bank needed to be kept small.
+export const BIG_FIVE_LEAGUES = [
+  { id: "GB1", name: "Premier League" },
+  { id: "ES1", name: "La Liga" },
+  { id: "L1", name: "Bundesliga" },
+  { id: "IT1", name: "Serie A" },
+  { id: "FR1", name: "Ligue 1" },
+] as const;
 
-export const leagues: string[] = [...new Set(clubs.map((c) => c.league))];
+// Clubs/leagues outside the big 5 needed only for the hand-entered legends'
+// categories (Cruyff/Beckenbauer → Ajax, Eusébio → Benfica, Puskás/di
+// Stéfano → still Real Madrid, already covered by La Liga). Resolved once
+// by hand against the live API and hardcoded here rather than resolved at
+// import time — club search results aren't reliably "the actual club
+// first": searching "porto" returns the Portugal national team (id 3300)
+// ranked above FC Porto (id 720), so trusting the top search result would
+// have been a real correctness bug.
+export const extraLeagues = [
+  { id: "NL1", name: "Eredivisie" },
+  { id: "PO1", name: "Primeira Liga" },
+] as const;
+
+export const extraClubs = [
+  { id: "610", name: "Ajax", leagueId: "NL1" },
+  { id: "720", name: "Porto", leagueId: "PO1" },
+  { id: "294", name: "Benfica", leagueId: "PO1" },
+] as const;
 
 // Youth/reserve stints shouldn't count toward "played for X" — a brief
 // academy spell isn't what a trivia player means by that. Matches things
@@ -74,35 +56,30 @@ export function isYouthOrReserveEntry(rawClubName: string): boolean {
   return /\b(u1[0-9]|u2[0-9]|yth\.?|youth|sub-1[0-9]|reserves?|\bb\b|\bc\b)\b/i.test(rawClubName);
 }
 
-// A real transfer record's club name matches a bank entry if it equals the
-// canonical name or a known alias, ignoring case/punctuation/diacritics.
-export function matchesClub(rawClubName: string, club: ClubCategory): boolean {
-  if (isYouthOrReserveEntry(rawClubName)) return false;
-  const normalized = norm(rawClubName);
-  return normalized === norm(club.name) || club.aliases.some((a) => norm(a) === normalized);
-}
+export type NationalityCategory = { id: string; name: string; aliases: string[] };
 
-export type NationalityCategory = { name: string; aliases: string[] };
-
+// Nationality still isn't id-matched — transfermarkt's citizenship field is
+// just plain country-name strings, no id, so this stays a small curated
+// list with alias handling for countries with more than one common name.
 export const nationalities: NationalityCategory[] = [
-  { name: "Brazil", aliases: [] },
-  { name: "Argentina", aliases: [] },
-  { name: "France", aliases: [] },
-  { name: "Germany", aliases: [] },
-  { name: "Spain", aliases: [] },
-  { name: "England", aliases: [] },
-  { name: "Italy", aliases: [] },
-  { name: "Portugal", aliases: [] },
-  { name: "Netherlands", aliases: ["Holland"] },
-  { name: "Uruguay", aliases: [] },
-  { name: "Belgium", aliases: [] },
-  { name: "Croatia", aliases: [] },
-  { name: "Sweden", aliases: [] },
-  { name: "Wales", aliases: [] },
-  { name: "Ivory Coast", aliases: ["Côte d'Ivoire"] },
-  { name: "Cameroon", aliases: [] },
-  { name: "Senegal", aliases: [] },
-  { name: "Japan", aliases: [] },
+  { id: slugify("Brazil"), name: "Brazil", aliases: [] },
+  { id: slugify("Argentina"), name: "Argentina", aliases: [] },
+  { id: slugify("France"), name: "France", aliases: [] },
+  { id: slugify("Germany"), name: "Germany", aliases: [] },
+  { id: slugify("Spain"), name: "Spain", aliases: [] },
+  { id: slugify("England"), name: "England", aliases: [] },
+  { id: slugify("Italy"), name: "Italy", aliases: [] },
+  { id: slugify("Portugal"), name: "Portugal", aliases: [] },
+  { id: slugify("Netherlands"), name: "Netherlands", aliases: ["Holland"] },
+  { id: slugify("Uruguay"), name: "Uruguay", aliases: [] },
+  { id: slugify("Belgium"), name: "Belgium", aliases: [] },
+  { id: slugify("Croatia"), name: "Croatia", aliases: [] },
+  { id: slugify("Sweden"), name: "Sweden", aliases: [] },
+  { id: slugify("Wales"), name: "Wales", aliases: [] },
+  { id: slugify("Ivory Coast"), name: "Ivory Coast", aliases: ["Côte d'Ivoire"] },
+  { id: slugify("Cameroon"), name: "Cameroon", aliases: [] },
+  { id: slugify("Senegal"), name: "Senegal", aliases: [] },
+  { id: slugify("Japan"), name: "Japan", aliases: [] },
 ];
 
 export function matchesNationality(rawCitizenship: string, nat: NationalityCategory): boolean {
@@ -111,7 +88,8 @@ export function matchesNationality(rawCitizenship: string, nat: NationalityCateg
 }
 
 export type TrophyCategory = {
-  name: string; // canonical display value, stored as categoryValue
+  id: string;
+  name: string;
   matches: (title: string) => boolean;
 };
 
@@ -122,138 +100,86 @@ export type TrophyCategory = {
 // nationality, and casing is inconsistent), and youth/U21 versions of
 // continental titles ("European Under-21 champion", "German Under-17
 // Bundesliga champion") have to be explicitly excluded so they don't get
-// confused with the senior trophy.
-export const trophies: TrophyCategory[] = [
-  {
-    name: "World Cup",
-    matches: (t) => /world cup/i.test(t) && !/club/i.test(t),
-  },
-  {
-    name: "UEFA Champions League",
-    matches: (t) => /champions league/i.test(t),
-  },
-  {
-    name: "UEFA Europa League",
-    matches: (t) => /europa league/i.test(t),
-  },
-  {
-    name: "Ballon d'Or",
-    matches: (t) => /ballon\s*d.?or/i.test(t),
-  },
+// confused with the senior trophy. England's domestic super cup is
+// literally the Community Shield, but transfermarkt titles it "English
+// Super Cup winner" same as every other country's super cup.
+const rawTrophies: { name: string; matches: (title: string) => boolean }[] = [
+  { name: "World Cup", matches: (t) => /world cup/i.test(t) && !/club/i.test(t) },
+  { name: "UEFA Champions League", matches: (t) => /champions league/i.test(t) },
+  { name: "UEFA Europa League", matches: (t) => /europa league/i.test(t) },
+  { name: "Ballon d'Or", matches: (t) => /ballon\s*d.?or/i.test(t) },
   {
     name: "UEFA European Championship",
     matches: (t) => /european champion/i.test(t) && !/u-?21|under|youth/i.test(t),
   },
-  {
-    name: "Copa América",
-    matches: (t) => norm(t).includes("copaamerica"),
-  },
-  {
-    name: "Premier League Winner",
-    matches: (t) => /english champion/i.test(t),
-  },
-  {
-    name: "La Liga Winner",
-    matches: (t) => /spanish champion/i.test(t),
-  },
+  { name: "Copa América", matches: (t) => norm(t).includes("copaamerica") },
+  { name: "Premier League Winner", matches: (t) => /english champion/i.test(t) },
+  { name: "La Liga Winner", matches: (t) => /spanish champion/i.test(t) },
   {
     name: "Bundesliga Winner",
     matches: (t) => /german champion/i.test(t) && !/u-?1[0-9]|u-?2[0-9]|under|youth/i.test(t),
   },
-  {
-    name: "Serie A Winner",
-    matches: (t) => /italian champion/i.test(t),
-  },
-  {
-    name: "Ligue 1 Winner",
-    matches: (t) => /french champion/i.test(t),
-  },
-  // Domestic cups and super cups — verified against real achievement
-  // titles pulled live from the API (transfermarkt-api's naming is
-  // consistent: "{Country} cup winner" / "{Country} Super Cup winner").
-  // England's domestic super cup is literally called the Community
-  // Shield, but transfermarkt titles it "English Super Cup winner" same
-  // as everywhere else, so that's what this matches against.
-  {
-    name: "FA Cup",
-    matches: (t) => /english fa cup/i.test(t),
-  },
-  {
-    name: "League Cup",
-    matches: (t) => /english league cup/i.test(t),
-  },
-  {
-    name: "Community Shield",
-    matches: (t) => /english super cup/i.test(t),
-  },
-  {
-    name: "Copa del Rey",
-    matches: (t) => /spanish cup/i.test(t),
-  },
-  {
-    name: "Spanish Super Cup",
-    matches: (t) => /spanish super cup/i.test(t),
-  },
-  {
-    name: "Coppa Italia",
-    matches: (t) => /italian cup/i.test(t),
-  },
-  {
-    name: "Italian Super Cup",
-    matches: (t) => /italian super cup/i.test(t),
-  },
-  {
-    name: "DFB-Pokal",
-    matches: (t) => /german cup/i.test(t),
-  },
-  {
-    name: "German Super Cup",
-    matches: (t) => /german super cup/i.test(t),
-  },
-  {
-    name: "Coupe de France",
-    matches: (t) => /french cup/i.test(t),
-  },
-  {
-    name: "French Super Cup",
-    matches: (t) => /french super cup/i.test(t),
-  },
-  {
-    name: "FIFA Club World Cup",
-    matches: (t) => /club world cup/i.test(t),
-  },
+  { name: "Serie A Winner", matches: (t) => /italian champion/i.test(t) },
+  { name: "Ligue 1 Winner", matches: (t) => /french champion/i.test(t) },
+  { name: "FA Cup", matches: (t) => /english fa cup/i.test(t) },
+  { name: "League Cup", matches: (t) => /english league cup/i.test(t) },
+  { name: "Community Shield", matches: (t) => /english super cup/i.test(t) },
+  { name: "Copa del Rey", matches: (t) => /spanish cup/i.test(t) },
+  { name: "Spanish Super Cup", matches: (t) => /spanish super cup/i.test(t) },
+  { name: "Coppa Italia", matches: (t) => /italian cup/i.test(t) },
+  { name: "Italian Super Cup", matches: (t) => /italian super cup/i.test(t) },
+  { name: "DFB-Pokal", matches: (t) => /german cup/i.test(t) },
+  { name: "German Super Cup", matches: (t) => /german super cup/i.test(t) },
+  { name: "Coupe de France", matches: (t) => /french cup/i.test(t) },
+  { name: "French Super Cup", matches: (t) => /french super cup/i.test(t) },
+  { name: "FIFA Club World Cup", matches: (t) => /club world cup/i.test(t) },
 ];
 
+export const trophies: TrophyCategory[] = rawTrophies.map((t) => ({ id: slugify(t.name), ...t }));
+
 export type ManagerTenure = {
-  manager: string; // canonical display value, stored as categoryValue
-  club: string; // must match a `name` in `clubs` above
+  managerId: string;
+  manager: string;
+  teamId: string; // real transfermarkt club id, hand-resolved (see below)
   startYear: number;
   endYear: number; // use current year for still-ongoing tenures
 };
 
 // The least reliable category — no API gives us manager history, so this
 // is fully hand-curated and deliberately kept small and well-checked
-// rather than exhaustive. Only a player's real club stint needs to
+// rather than exhaustive. Club ids were hand-resolved against the live
+// competitions/{id}/clubs endpoints (not guessed) so tenure matching can
+// be a plain id comparison against a player's real player_teams rows, no
+// name matching involved. Only a player's real club stint needs to
 // *overlap* the given range (see scripts/import-players.ts), not match it
 // exactly, so short loan-spell edge cases are the main risk here, not date
 // precision.
-export const managerTenures: ManagerTenure[] = [
-  { manager: "Sir Alex Ferguson", club: "Manchester United", startYear: 1986, endYear: 2013 },
-  { manager: "Pep Guardiola", club: "Barcelona", startYear: 2008, endYear: 2012 },
-  { manager: "Pep Guardiola", club: "Bayern Munich", startYear: 2013, endYear: 2016 },
-  { manager: "Pep Guardiola", club: "Manchester City", startYear: 2016, endYear: 2026 },
-  { manager: "Arsène Wenger", club: "Arsenal", startYear: 1996, endYear: 2018 },
-  { manager: "José Mourinho", club: "Chelsea", startYear: 2004, endYear: 2007 },
-  { manager: "José Mourinho", club: "Inter Milan", startYear: 2008, endYear: 2010 },
-  { manager: "José Mourinho", club: "Real Madrid", startYear: 2010, endYear: 2013 },
-  { manager: "Carlo Ancelotti", club: "AC Milan", startYear: 2001, endYear: 2009 },
-  { manager: "Carlo Ancelotti", club: "Real Madrid", startYear: 2013, endYear: 2015 },
-  { manager: "Diego Simeone", club: "Atlético Madrid", startYear: 2011, endYear: 2026 },
-  { manager: "Jürgen Klopp", club: "Borussia Dortmund", startYear: 2008, endYear: 2015 },
-  { manager: "Jürgen Klopp", club: "Liverpool", startYear: 2015, endYear: 2024 },
-  { manager: "Antonio Conte", club: "Juventus", startYear: 2011, endYear: 2014 },
-  { manager: "Antonio Conte", club: "Chelsea", startYear: 2016, endYear: 2018 },
-  { manager: "Massimiliano Allegri", club: "Juventus", startYear: 2014, endYear: 2019 },
-  { manager: "Zinédine Zidane", club: "Real Madrid", startYear: 2016, endYear: 2018 },
-  { manager: "Fabio Capello", club: "AC Milan", startYear: 1991, endYear: 1996 },
+const rawManagerTenures: Omit<ManagerTenure, "managerId">[] = [
+  { manager: "Sir Alex Ferguson", teamId: "985", startYear: 1986, endYear: 2013 }, // Manchester United
+  { manager: "Pep Guardiola", teamId: "131", startYear: 2008, endYear: 2012 }, // Barcelona
+  { manager: "Pep Guardiola", teamId: "27", startYear: 2013, endYear: 2016 }, // Bayern Munich
+  { manager: "Pep Guardiola", teamId: "281", startYear: 2016, endYear: 2026 }, // Manchester City
+  { manager: "Arsène Wenger", teamId: "11", startYear: 1996, endYear: 2018 }, // Arsenal
+  { manager: "José Mourinho", teamId: "631", startYear: 2004, endYear: 2007 }, // Chelsea
+  { manager: "José Mourinho", teamId: "46", startYear: 2008, endYear: 2010 }, // Inter Milan
+  { manager: "José Mourinho", teamId: "418", startYear: 2010, endYear: 2013 }, // Real Madrid
+  { manager: "Carlo Ancelotti", teamId: "5", startYear: 2001, endYear: 2009 }, // AC Milan
+  { manager: "Carlo Ancelotti", teamId: "418", startYear: 2013, endYear: 2015 }, // Real Madrid
+  { manager: "Diego Simeone", teamId: "13", startYear: 2011, endYear: 2026 }, // Atlético Madrid
+  { manager: "Jürgen Klopp", teamId: "16", startYear: 2008, endYear: 2015 }, // Borussia Dortmund
+  { manager: "Jürgen Klopp", teamId: "31", startYear: 2015, endYear: 2024 }, // Liverpool
+  { manager: "Antonio Conte", teamId: "506", startYear: 2011, endYear: 2014 }, // Juventus
+  { manager: "Antonio Conte", teamId: "631", startYear: 2016, endYear: 2018 }, // Chelsea
+  { manager: "Massimiliano Allegri", teamId: "506", startYear: 2014, endYear: 2019 }, // Juventus
+  { manager: "Zinédine Zidane", teamId: "418", startYear: 2016, endYear: 2018 }, // Real Madrid
+  { manager: "Fabio Capello", teamId: "5", startYear: 1991, endYear: 1996 }, // AC Milan
 ];
+
+export const managerTenures: ManagerTenure[] = rawManagerTenures.map((t) => ({
+  managerId: slugify(t.manager),
+  ...t,
+}));
+
+export const managers: { id: string; name: string }[] = [
+  ...new Map(managerTenures.map((t) => [t.managerId, t.manager])),
+].map(([id, name]) => ({ id, name }));
